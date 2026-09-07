@@ -1,6 +1,6 @@
 ---
 name: tailor-resume
-description: "Use when the user wants a resume tailored to a specific role — trigger phrases: 'tailor my resume', 'tailor resume for this JD', 'apply to this role', 'generate a resume for this job', 'here's a job link'. Parses the JD, ranks bullets from ResumeAgent/resume_base.md, asks about gaps one at a time, writes confirmed answers back into the inventory, and renders a one-page PDF into ResumeAgent/roles/. Not for writing a resume from scratch and not for job discovery."
+description: "Use when the user wants a resume tailored to a specific role — trigger phrases: 'tailor my resume', 'tailor resume for this JD', 'apply to this role', 'generate a resume for this job', 'here's a job link'. Parses the JD, ranks bullets from ResumeAgent/resume_base.md, asks about gaps one at a time, renders a one-page PDF into ResumeAgent/roles/, then link-checks the accepted resume and estimates its screen-through odds. Not for writing a resume from scratch and not for job discovery."
 ---
 
 # Tailor a Resume
@@ -176,6 +176,61 @@ This is what makes the next application cheaper than this one.
 Report: the PDF path, which bullets were used and which were cut, every gap
 question the user answered, what got written back into `resume_base.md`, and
 which variants were reused from earlier applications.
+
+Then ask whether the resume is accepted. Do not run step 9 until it is — a
+review of a draft the user is still editing is wasted work.
+
+### 9. Final review — only after the user accepts
+
+Two checks, in this order. Both are read-only: never edit `tailored.json` or
+`resume_base.md` during this step. If something is wrong, report it and let the
+user decide whether to go back to step 5.
+
+**Links.** A dead or mangled link on a resume is a silent failure — nobody tells
+you the GitHub URL 404'd. Collect every URL in `roles/<slug>/tailored.json`
+(`contact` fields, and every project `link`) and check each one:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}  %{url_effective}\n' -L --max-time 15 "<url>"
+```
+
+Then confirm the PDF carries the same URLs the JSON does, since LaTeX escaping
+is where a good URL turns into a broken one:
+
+```bash
+grep -o 'href{[^}]*}' roles/<slug>/<slug>.tex
+```
+
+Every `href` target must match a URL from `tailored.json` character for
+character. Report a small table: URL, HTTP status, and whether it survived into
+the `.tex` intact. Call out anything that is not a `200`. A `403` from a site
+that blocks automated fetches (LinkedIn does this) is not a broken link — say
+so rather than raising a false alarm, and ask the user to eyeball that one.
+
+**Screen-through estimate.** A short, honest read on whether this resume clears
+the resume screen for *this* posting. Keep it to a percentage and three lines:
+
+```
+Screen-through estimate: NN%
+Carries it:  <the strongest match against `required`>
+Drags it:    <the required qual with the weakest or no evidence>
+Biggest lever: <the one change that would move the number most>
+```
+
+Ground the number in `jd_analysis.json`, not in vibes:
+
+- Start from coverage of `required`. An unmet hard minimum is the dominant
+  term — it caps the estimate low no matter how strong the rest reads.
+- Then weigh seniority fit, `keywords` coverage for an ATS pass, and whether
+  the leading bullets actually speak to `emphasis`.
+- Company selectivity is part of the number. The same resume does not have the
+  same odds at Google and at a Series A startup.
+
+The anti-fabrication invariant applies to this estimate too. Do not inflate it
+to be encouraging, and do not hedge it into uselessness with a 20-point band.
+If an unmet minimum makes it a long shot, say the number out loud and name what
+would fix it. The user is deciding where to spend limited application effort,
+and a flattering number costs them more than a blunt one.
 
 ---
 

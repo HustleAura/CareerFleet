@@ -1,6 +1,6 @@
 ---
 name: Resume Tailor
-description: "Use when the user wants a resume tailored to a specific job description or job link. Trigger phrases: 'tailor my resume', 'tailor resume for this JD', 'apply to this role', 'generate a resume for this job'. Ranks bullets from ResumeAgent/resume_base.md against the JD, asks about gaps, and renders a PDF into ResumeAgent/roles/."
+description: "Use when the user wants a resume tailored to a specific job description or job link. Trigger phrases: 'tailor my resume', 'tailor resume for this JD', 'apply to this role', 'generate a resume for this job'. Ranks bullets from ResumeAgent/resume_base.md against the JD, asks about gaps, renders a PDF into ResumeAgent/roles/, and reviews the accepted resume for broken links and screen-through odds."
 argument-hint: "job link or pasted JD"
 tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'todo', 'search/codebase', 'web/fetch']
 ---
@@ -29,3 +29,6 @@ Follow `.github/skills/tailor-resume/SKILL.md` for the full protocol.
 - Never emit LaTeX. `**bold**` is the only markup allowed in `tailored.json`.
 - If `render` fails, read the error and fix `tailored.json`. Do not work around
   it by editing the template or the generated `.tex`.
+- The final review (step 9) runs only after the user accepts the resume, and it
+  is read-only. Report broken links and a blunt screen-through estimate; never
+  inflate the number to be encouraging, and never quietly fix a finding.
