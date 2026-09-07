@@ -1,0 +1,6 @@
+# Rendering runs on pdflatex from BasicTeX (brew install --cask basictex).
+#   eval "$(/usr/libexec/path_helper)"
+#   sudo tlmgr update --self
+#   sudo tlmgr install titlesec marvosym enumitem fancyhdr preprint
+# scripts/tailor.py needs Jinja2; everything else is the Python standard library.
+Jinja2>=3.1

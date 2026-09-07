@@ -1,0 +1,11 @@
+# LaTeX build intermediates.
+*.aux
+*.log
+*.out
+*.synctex.gz
+
+# Personal material. resume_base.md carries contact details and unpublished
+# metrics; roles/ carries generated resumes for real applications. Both stay
+# local - the repo publishes the machinery, not the contents.
+resume_base.md
+roles/

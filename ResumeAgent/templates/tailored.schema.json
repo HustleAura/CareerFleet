@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "tailored.json",
+  "description": "Contract between the Resume Tailor agent and scripts/tailor.py. The agent writes this file and never writes LaTeX. Every string is plain text: '**double asterisks**' mark bold, literals stay unescaped (90%, C#, 9.8M, &). The renderer escapes LaTeX specials first, then converts bold.",
+  "type": "object",
+  "required": ["schema_version", "role", "contact", "summary", "experience", "education", "skills"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "role": {
+      "type": "object",
+      "required": ["company", "title"],
+      "properties": {
+        "company": { "type": "string" },
+        "title": { "type": "string" },
+        "jd_source": { "type": "string", "description": "URL or 'pasted'" }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "description": "Copied verbatim from the Contact block of resume_base.md. Never tailored.",
+      "required": ["name", "email", "phone", "linkedin", "github", "codeforces", "codeforces_rating"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "linkedin": { "type": "string" },
+        "github": { "type": "string" },
+        "codeforces": { "type": "string" },
+        "codeforces_rating": { "type": "string" }
+      }
+    },
+    "summary": { "$ref": "#/$defs/sourcedText" },
+    "experience": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "location", "org", "dates", "bullets"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "description": "ROLE-* id from resume_base.md" },
+          "title": { "type": "string" },
+          "location": { "type": "string" },
+          "org": { "type": "string" },
+          "dates": { "type": "string" },
+          "bullets": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/sourcedText" }
+          }
+        }
+      }
+    },
+    "education": {
+      "type": "array",
+      "description": "Frozen section. Copy verbatim from resume_base.md.",
+      "items": {
+        "type": "object",
+        "required": ["institution", "location", "degree", "dates"],
+        "additionalProperties": false,
+        "properties": {
+          "institution": { "type": "string" },
+          "location": { "type": "string" },
+          "degree": { "type": "string" },
+          "dates": { "type": "string" }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "description": "Include, exclude and reorder. Bullet text still needs a source_id.",
+      "items": {
+        "type": "object",
+        "required": ["title", "link", "date", "bullets"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "link": { "type": "string" },
+          "date": { "type": "string" },
+          "bullets": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/sourcedText" }
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Reorder categories and items to match JD keywords. Never add a technology absent from SKL-01 in resume_base.md.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "items"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "competitive_programming": {
+      "type": "array",
+      "description": "Frozen section. Copy verbatim from CP-01, or omit the section entirely.",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "sourcedText": {
+      "type": "object",
+      "description": "The anti-fabrication unit. Text may never assert a fact absent from the cited resume_base entry.",
+      "required": ["source_id", "transform", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "description": "Must resolve to an entry in resume_base.md. Unknown ids fail the render."
+        },
+        "transform": {
+          "enum": ["verbatim", "rephrased", "reweighted"],
+          "description": "verbatim = byte-identical to the source bullet. rephrased = reworded, every fact and number unchanged. reweighted = same facts, emphasis reordered for the JD."
+        },
+        "text": { "type": "string" }
+      }
+    }
+  }
+}
