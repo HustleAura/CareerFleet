@@ -1,0 +1,6 @@
+# Per-agent working material is ignored by each agent's own .gitignore.
+.venv/
+__pycache__/
+*.pyc
+
+.DS_Store

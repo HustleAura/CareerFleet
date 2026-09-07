@@ -1,0 +1,13 @@
+# Recordings and transcripts are working material, kept locally and pruned by
+# hand. Only evaluation.json and card.md under sessions/ are the durable record.
+recordings/*
+!recordings/.gitkeep
+transcripts/*
+!transcripts/.gitkeep
+*.wav
+
+# In-flight worker state, deleted at finalization.
+sessions/**/.work/
+
+# Whisper GGML weights (~3GB) are downloaded, not tracked.
+models/

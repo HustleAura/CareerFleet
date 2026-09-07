@@ -1,0 +1,2 @@
+# Transcription runs on whisper.cpp (brew install whisper-cpp) + ffmpeg.
+# scripts/transcribe.py needs only the Python standard library.
