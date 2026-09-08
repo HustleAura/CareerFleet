@@ -6,8 +6,5 @@ transcripts/*
 !transcripts/.gitkeep
 *.wav
 
-# In-flight worker state, deleted at finalization.
-sessions/**/.work/
-
 # Whisper GGML weights (~3GB) are downloaded, not tracked.
 models/

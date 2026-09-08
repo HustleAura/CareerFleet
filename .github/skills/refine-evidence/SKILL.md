@@ -1,69 +1,51 @@
 ---
 name: refine-evidence
-description: "Find spans in a raw speech-to-text walkthrough transcript where the meaning may have been corrupted, and turn them into clarification questions. Used by the Transcript Refiner agents before any scoring happens. Not for scoring."
+description: "Use before scoring a design transcript to find speech-to-text corruption, ask what was actually spoken, and prepare the final clarified transcript. Performed by the interviewer, not a subagent."
 ---
 
-# Refine a Raw Transcript
+# Refine the Transcript
 
-Speech-to-text mangles technical terms and numbers. Anything scored off a
-garbled line is a scoring error, not a candidate error. Your job is to find
-every span worth checking, and nothing else.
+Read the entire raw transcript yourself. Do not score yet. Keep findings in the
+conversation, not a machine protocol or persisted stage object.
 
-You are one of two independent refiners. Do not read any other refiner's output.
-Do not score anything, and do not judge the design.
+## Find Corruption
 
-## What to flag
+- Mangled technical terms, names, numbers, units, or orders of magnitude.
+- Broken or truncated sentences and gaps where ASR may have lost reasoning.
+- Exact or near-exact repeated phrases produced by the decoder.
+- Unrecoverable spans that cannot reliably establish what was said.
 
-- Mangled technical terms — `Kafka`, `CQRS`, `sharding`, `idempotent`, `quorum`,
-  `CDN`, `Redis`, `gRPC`, database and product names
-- Numbers that did not survive — "ten thousand QPS", "one hundred million rows",
-  units dropped, orders of magnitude that contradict a nearby line
-- Broken or truncated sentences, `[inaudible]`-style gaps, dead spans
-- Logical jumps where a reasoning step seems missing — often a transcription
-  artifact rather than a real gap in thinking
-- Exact or near-exact repeated phrases — these are decoder artifacts, not
-  rambling. Flag them so they are not mistaken for poor communication.
+Do not flag a design choice merely because it is wrong. Do not turn a genuine
+omission into an opportunity to improve the answer. Group duplicate findings
+and use nearby repetitions to explain a likely reading, without silently fixing
+ambiguous words or numbers.
 
-## What not to flag
+For each question, give the exact timestamp and quote from that segment, your
+tentative reading, and ask what was actually said. Prefer one manageable batch;
+follow up on unanswered items without restarting the whole process.
 
-- A decision you disagree with. That is the evaluator's job, not yours.
-- A gap that is clearly a real gap — silence on caching is evidence, not noise.
-- Anything you would only ask in order to give the candidate a second attempt.
+Example:
 
-## How to phrase a question
+> [04:12] "we'll use Kafla for the right ahead log"
+> Read as: Kafka for the write-ahead log. Did you say that in the recording?
+> If not, what did you say?
 
-For each span: quote the exact line with its timestamp, state how you read it,
-and probe the decision behind it rather than the misheard word.
+## Clarify and Prepare Final Text
 
-> `[04:12] "we'll use Kafla for the right ahead log"`
-> Read as: Kafka for the write-ahead log. What was the reasoning for putting a
-> log there rather than writing straight to the database?
-
-## Output
-
-Return **only** this JSON object as your final message.
-
-```json
-{
-  "schema_version": 1,
-  "session_id": "<the session id you were given>",
-  "items": [
-    {
-      "timestamp": "[04:12]",
-      "quote": "we'll use Kafla for the right ahead log",
-      "reading": "Kafka for the write-ahead log",
-      "question": "What was the reasoning for putting a log there rather than writing straight to the database?",
-      "kind": "term"
-    }
-  ],
-  "repetition_spans": ["[28:10]-[31:45]"],
-  "unrecoverable_spans": ["[14:31]-[14:58]"],
-  "clean": false
-}
-```
-
-`kind` is one of `term`, `number`, `truncation`, `logic-jump`.
-Set `clean` to `true` and `items` to `[]` if the transcript needs nothing.
-
-`unrecoverable_spans` are spans no question can repair. They become unavailable
-evidence at scoring time — neither credited nor penalised.
+1. Wait for actual user answers to ambiguous findings. Do not treat your likely
+   reading as confirmation. The user may identify an unclear span as unavailable
+   instead of recovering it; record that decision and do not score that span.
+2. Keep raw text unchanged. Apply only confirmed transcription corrections to
+   a separate `SystemDesignInterviewerAgent/transcripts/<id>.final.txt` file,
+   retaining timestamps. Do not incorporate improved design reasoning supplied
+   after recording. Keep excluded additions in notes, separate from evidence.
+3. Retain concise notes of questions, answers, excluded additions, repetition,
+   and unavailable spans for the final accepted evaluation. No worker results,
+   ballots, hash bindings, or round histories are required.
+4. If there are no corrections, designate the raw transcript as final. Otherwise
+   show the corrected file and summarize the applied clarifications. Do not
+   score until required questions have answers or the user has explicitly marked
+   the affected evidence unavailable.
+5. Continue with `.github/skills/score-design/SKILL.md` using only the designated
+   final transcript as design evidence. Machine repetition is not a communication
+   defect; unrecoverable content earns neither credit nor penalty.
