@@ -1,0 +1,32 @@
+{
+  "country": "India",
+  "cities": ["Hyderabad", "Bengaluru"],
+  "companies": {
+    "rubrik": {
+      "enabled": true,
+      "access": "public_feed",
+      "note": "Documented Greenhouse public GET feed; do not scrape Rubrik's corporate pages."
+    },
+    "amazon": {
+      "enabled": true,
+      "access": "review_needed",
+      "note": "On-demand public GET search verified. Conditions-of-use review remains incomplete; review before recurring use."
+    },
+    "deshaw_india": {
+      "enabled": true,
+      "access": "personal_use",
+      "note": "Private personal-use collection only; keep content local and respect the site's terms and robots.txt."
+    },
+    "uber": {
+      "enabled": true,
+      "access": "review_needed",
+      "note": "Public Oracle GET endpoints verified. Recruitment-specific access conditions need review before recurring use."
+    },
+    "apple": {
+      "enabled": false,
+      "access": "permission_required",
+      "approval_reference": "",
+      "note": "Apple terms restrict automated extraction. Enable only with an applicable permission or sanctioned access basis."
+    }
+  }
+}

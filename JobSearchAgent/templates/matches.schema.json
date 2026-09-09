@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:careerfleet:matching:2",
+  "title": "CareerFleet temporary-session assessment v2 (one record; batches are arrays)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["job_key", "decision", "role_family", "role_scope_fit", "summary", "reasons_to_apply", "gaps", "source_warnings", "requirements", "grades", "audit"],
+  "properties": {
+    "job_key": {"type": "string", "minLength": 1},
+    "decision": {"enum": ["strong_fit", "plausible_fit", "stretch", "not_recommended", "needs_review", "exploratory", "expired"]},
+    "role_family": {"type": "string", "minLength": 1},
+    "role_scope_fit": {"enum": ["direct", "transferable", "fundamental_mismatch", "unknown"]},
+    "summary": {"$ref": "#/$defs/claim"},
+    "reasons_to_apply": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+    "source_warnings": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "requirements": {"type": "array", "items": {"$ref": "#/$defs/requirement"}},
+    "grades": {
+      "type": "object", "additionalProperties": false,
+      "required": ["required_fit", "ownership_domain_fit", "coding_stack_fit", "experience_scope_fit", "ai_relevance"],
+      "properties": {
+        "required_fit": {"$ref": "#/$defs/grade"},
+        "ownership_domain_fit": {"$ref": "#/$defs/grade"},
+        "coding_stack_fit": {"$ref": "#/$defs/grade"},
+        "experience_scope_fit": {"$ref": "#/$defs/grade"},
+        "ai_relevance": {"$ref": "#/$defs/grade"}
+      }
+    },
+    "audit": {
+      "type": "object", "additionalProperties": false, "required": ["reviewed", "notes"],
+      "properties": {"reviewed": {"type": "boolean"}, "notes": {"type": "string", "minLength": 1}}
+    }
+  },
+  "$defs": {
+    "selections": {
+      "description": "Temporary helper-generated output, never accepted from a model or retained across sessions. Company objects include listed_count, previously_applied (excluded job keys), source_status, inventory_complete, details_complete, fetched_at, fetch_age_days, source_warnings, source_errors, unresolved_location_count, input_count (untracked candidates at prepare), assessed_count, selected_count, provisional, recommendations, needs_review and exploratory. Recommendations retain source identities/links, fit evidence, gaps, grades, warnings and audited summaries. Validate immediately before display using the current tracker; do not maintain old reports after application recording. All temporary artifacts are deleted at session cleanup.",
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "policy_version", "source_run", "finalized_at", "companies"],
+      "properties": {
+        "schema_version": {"enum": ["2"]}, "policy_version": {"enum": ["2"]},
+        "source_run": {"type": "string", "minLength": 1},
+        "finalized_at": {"type": "string", "minLength": 1}, "companies": {"type": "object"}
+      }
+    },
+    "receipt": {
+      "description": "Temporary commit marker, deleted with the session. input_hashes covers source/resume/policy/schema; output_hashes covers selections.json and shortlist.md. Company summaries retain source_status, assessed_count, selected_count and provisional. No application-history snapshot is stored here. Validation compares these summaries to rederived output before presentation.",
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "finalized_at", "assessment_complete", "assessed_count", "input_hashes", "assessment_sha256", "output_hashes", "companies"],
+      "properties": {
+        "schema_version": {"enum": ["2"]}, "finalized_at": {"type": "string", "minLength": 1},
+        "assessment_complete": {"type": "boolean"}, "assessed_count": {"type": "integer", "minimum": 0},
+        "input_hashes": {"type": "object"}, "assessment_sha256": {"type": "string", "minLength": 1},
+        "output_hashes": {"type": "object"}, "companies": {"type": "object"}
+      }
+    },
+    "refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "claim": {
+      "type": "object", "additionalProperties": false, "required": ["text", "requirement_ids"],
+      "properties": {"text": {"type": "string", "minLength": 1}, "requirement_ids": {"$ref": "#/$defs/refs"}}
+    },
+    "grade": {
+      "type": "object", "additionalProperties": false, "required": ["value", "explanation", "requirement_ids"],
+      "properties": {
+        "value": {"type": "integer", "minimum": 0, "maximum": 4},
+        "explanation": {"type": "string", "minLength": 1},
+        "requirement_ids": {"$ref": "#/$defs/refs"}
+      }
+    },
+    "gap": {
+      "type": "object", "additionalProperties": false, "required": ["requirement_id", "kind", "severity", "explanation"],
+      "properties": {
+        "requirement_id": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["unmet_minimum", "undocumented", "preferred_only", "fundamental"]},
+        "severity": {"enum": ["minor", "major"]},
+        "explanation": {"type": "string", "minLength": 1}
+      }
+    },
+    "requirement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "source_field", "jd_quote", "importance", "relation", "evidence_status", "evidence"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "source_field": {"enum": ["description", "required", "preferred", "qualifications", "responsibilities"]},
+        "jd_quote": {"type": "string", "minLength": 1},
+        "importance": {"enum": ["required", "preferred", "unclear"]},
+        "relation": {
+          "type": "object", "additionalProperties": false, "required": ["type", "group", "explanation"],
+          "properties": {
+            "type": {"enum": ["single", "all", "any"]},
+            "group": {"type": "string", "minLength": 1},
+            "explanation": {"type": "string", "minLength": 1}
+          }
+        },
+        "evidence_status": {"enum": ["supported", "transferable", "undocumented", "contradicted"]},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "resume_quote", "scope", "capability", "explanation"],
+      "properties": {
+        "source_id": {"type": "string", "minLength": 1},
+        "resume_quote": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["professional", "summary", "project", "tooling", "competitive", "skills", "education"]},
+        "capability": {"enum": ["general", "production_python", "production_cpp"]},
+        "explanation": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

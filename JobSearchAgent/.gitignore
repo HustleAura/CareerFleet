@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+runs/
+matches/
+applied_jobs.csv
+.applied_jobs.csv.lock/
+.applied_jobs.csv.*.tmp
+.venv/
