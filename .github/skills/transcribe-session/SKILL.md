@@ -1,98 +1,36 @@
 ---
 name: transcribe-session
-description: "Use when the user has recorded a system design walkthrough video and wants it transcribed and/or evaluated. Trigger phrases: 'transcribe my recording', 'evaluate my video', 'I finished my walkthrough', 'score my design session', 'here's my recording'. Starts the session workflow that transcribes, refines and freezes the transcript before any scoring."
+description: "Use when the user asks to transcribe a recording, evaluate a video, or score a recorded design walkthrough. Obtain and show raw text, then continue to refinement before any scoring."
 ---
 
-# Transcribe a Design Session
+# Transcribe a Design Walkthrough
 
-Turn a recorded walkthrough into the frozen transcript that the evaluator panel
-scores. **Never skip to scoring.**
+The current System Design Interviewer performs this skill itself. Run commands
+from the workspace root. No session initialization or worker dispatch is needed.
 
-Everything durable for a session lives in one folder,
-`SystemDesignInterviewerAgent/sessions/<session-id>/`, and
-`SystemDesignInterviewerAgent/scripts/evaluate_session.py` owns every write to
-it. Do not create or move files there by hand. The recording stays in
-`SystemDesignInterviewerAgent/recordings/` and the transcript in
-`SystemDesignInterviewerAgent/transcripts/` — both are working material,
-gitignored, and pruned by the user.
+1. Identify the requested recording under
+   `SystemDesignInterviewerAgent/recordings/`. If multiple files are plausible,
+   clarify which recordings were requested. Reuse the corresponding existing raw
+   transcript when available and appropriate; do not assume unrelated timestamps
+   identify the same recording. Preserve existing raw text.
+2. For a new transcription, run the existing wrapper with an explicit path:
 
-All paths below are relative to the workspace root, and every command is run
-from the workspace root.
+   ```bash
+   bash SystemDesignInterviewerAgent/scripts/transcribe.sh "SystemDesignInterviewerAgent/recordings/<file>"
+   ```
 
-## 1. Create the session
+   The wrapper uses the project virtual environment, ffmpeg, whisper.cpp, and
+   local models. Report missing prerequisites honestly. Do not substitute invented
+   text. The script prints the new timestamped transcript path.
+3. Read the complete raw transcript and show it via a clickable link with its
+   opening excerpt. Offer the full text in chat when requested. Existing text
+   without a recording can be used directly; no import or copy command is needed.
+4. Identify the problem from the text when possible. Reuse the user's difficulty;
+   ask only if missing. Use the recording stem plus an evaluation timestamp for
+   a new evaluation ID, and the recording's date for the attempt date.
+5. Continue with `.github/skills/refine-evidence/SKILL.md`. Never score raw text
+   before checking transcription quality and resolving required clarifications.
 
-The session ID follows the existing convention: the recording stem plus a
-timestamp, e.g. `2026-09-06 21-30-07_2026-09-06_2222`.
-
-```bash
-python3 SystemDesignInterviewerAgent/scripts/evaluate_session.py init "<session-id>" \
-  --problem "<name>" --difficulty <basic|easy|medium|hard|architect> \
-  --recording "SystemDesignInterviewerAgent/recordings/<file>"
-```
-
-The recording is hashed where it sits. It is never moved, copied or committed.
-
-## 2. Transcribe
-
-```bash
-python3 SystemDesignInterviewerAgent/scripts/evaluate_session.py transcribe "<session-id>"
-```
-
-Writes `SystemDesignInterviewerAgent/transcripts/<session-id>.txt` with `[mm:ss]`
-line prefixes.
-The first run downloads ~3GB of whisper.cpp weights; a 30-minute recording takes
-several minutes.
-
-If there is no recording, import existing text instead:
-`transcribe "<session-id>" --from-file <path>`.
-
-## 3. Show the raw transcript
-
-Read it and show it to the user. Do not evaluate yet.
-
-## 4. Refinement pass
-
-Dispatch **both** `Transcript Refiner (GPT)` and `Transcript Refiner (Opus)` on
-`SystemDesignInterviewerAgent/transcripts/<session-id>.txt`. They follow
-`.github/skills/refine-evidence/SKILL.md` and
-return JSON. Two refiners run because a corruption one model reads past is
-usually caught by the other.
-
-Save each result under
-`SystemDesignInterviewerAgent/sessions/<session-id>/.work/` and import it:
-
-```bash
-python3 SystemDesignInterviewerAgent/scripts/evaluate_session.py import "<session-id>" \
-  --kind refinement --model opus \
-  --file "SystemDesignInterviewerAgent/sessions/<session-id>/.work/refine-opus.json"
-```
-
-Merge both lists, drop duplicates, and ask the candidate every question in **one
-batched list** — not one at a time. If both refiners report `clean`, say so and
-move on.
-
-## 5. Freeze
-
-Fold the answers into a corrected copy and freeze it:
-
-```bash
-python3 SystemDesignInterviewerAgent/scripts/evaluate_session.py freeze "<session-id>" \
-  --corrected "SystemDesignInterviewerAgent/sessions/<session-id>/.work/corrected.txt" \
-  --clarifications "SystemDesignInterviewerAgent/sessions/<session-id>/.work/clarifications.json"
-```
-
-The frozen transcript and its hash are now immutable. Both evaluators are pinned
-to that exact hash, so neither can score a different text. Corrections land in
-`SystemDesignInterviewerAgent/transcripts/<session-id>.frozen.txt`, leaving the
-verbatim ASR record intact
-beside it. With no corrections the original file is frozen in place.
-
-Hand off to the `Design Evaluator` agents next.
-
-### Guardrail
-
-Clarification is **not** a second attempt at the design. Only ask about content
-already present in the transcript. If the user introduces a design decision that
-was not in the recording, acknowledge it, pass it to `freeze --excluded`, and
-say plainly that it was not part of the original walkthrough. Score what was
-recorded.
+Recordings and transcripts are working material, not workflow state. Keep them
+available through scoring and initial progress recording. Do not delete them
+unless the user requests cleanup.

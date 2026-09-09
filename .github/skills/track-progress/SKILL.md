@@ -1,6 +1,6 @@
 ---
 name: track-progress
-description: "Use in two situations. WRITE: after a system design session has been finalized and the user has accepted the evaluation, record it into SystemDesignInterviewerAgent/progress/. READ: when the user asks how they are doing — trigger phrases: 'how am I doing', 'progress report', 'show my progress', 'what are my weaknesses', 'am I improving', 'my scores so far'. Reads and maintains SystemDesignInterviewerAgent/progress/STATE.md, WEAKNESSES.md, sessions.jsonl and the session folders under SystemDesignInterviewerAgent/sessions/."
+description: "Use after explicit acceptance to save a design evaluation and update all progress tracking. Also use for 'how am I doing', 'progress report', 'show my progress', 'what are my weaknesses', 'am I improving', or 'my scores so far'."
 ---
 
 # Track Progress
@@ -10,7 +10,7 @@ Persistent memory for the design interview loop. Two modes — pick one.
 `RUBRIC.md` is the source of truth for dimension names, concept tags, and
 difficulty rungs. Read it before writing anything. Never invent a tag.
 
-Each session's card and audit bundle live in
+Each accepted evaluation and its generated card live in
 `SystemDesignInterviewerAgent/sessions/<session-id>/`.
 `SystemDesignInterviewerAgent/progress/` holds only the cross-session
 aggregates. All paths below are relative to the workspace root, and every
@@ -67,54 +67,56 @@ for now.
 
 ---
 
-# WRITE mode — record a finalized session
+# WRITE mode — record an accepted evaluation
 
-Only after the user has seen and accepted the evaluation, and the session has
-been finalized. Never record a session that is still being clarified.
+Only after the user has seen and explicitly accepted the evaluation. The
+interviewer handles this gate in the conversation; no approval payload or
+workflow command is required. Never record while clarification is pending.
 
 The card, `sessions.jsonl` and the `STATE.md` matrix are **generated**, not
 written by hand — averages and attempt counts are arithmetic, and hand-computing
 them is how a ledger drifts. Only `WEAKNESSES.md` needs judgement.
 
-## 1. Generate the card and the audit bundle
+## 1. Save the accepted evaluation and rebuild progress
+
+Serialize the exact accepted result using
+`SystemDesignInterviewerAgent/progress/SESSION_FORMAT.md` into a scratch JSON
+file outside the final session directory. Include actual clarification answers,
+unavailable/repetition spans and excluded additions in its evidence notes. Use
+the attempt date, supplied difficulty and problem, not today's date by default.
+Do not invent scores, acceptance, or candidate statements.
 
 ```bash
-python3 SystemDesignInterviewerAgent/scripts/evaluate_session.py finalize "<session-id>"
+python3 SystemDesignInterviewerAgent/scripts/progress.py record "/tmp/<id>-evaluation.json"
 ```
 
-Writes `SystemDesignInterviewerAgent/sessions/<session-id>/card.md` and
-`evaluation.json` from the canonical
-scores, then deletes `.work/`. The card is immutable and is never edited — it is
-regenerable from `evaluation.json`, and `validate` fails if the two ever diverge.
-A correction goes in a new session, never in an old card.
-
-## 2. Append to the ledger and rebuild the matrix
-
-```bash
-python3 SystemDesignInterviewerAgent/scripts/evaluate_session.py record "<session-id>"
-```
-
-Appends one line to `SystemDesignInterviewerAgent/progress/sessions.jsonl` and
+Saves `sessions/<id>/evaluation.json`, derives `card.md`, appends one line to
+`SystemDesignInterviewerAgent/progress/sessions.jsonl` and
 rewrites `SystemDesignInterviewerAgent/progress/STATE.md`
 in full — sessions completed, last 5 overall, and all 35 matrix cells recomputed
 from the ledger, so the file self-heals if a cell ever drifted. `null` entries
 are excluded from both numerator and `n`; a cell with no scored sessions stays
 `null`, never `0` and never blank.
 
-Both commands refuse to run twice. If either reports the session is already
-recorded, stop — do not force it.
+Identical retries do not duplicate ledger entries or attempt counts and can
+repair derived outputs. Conflicting same-ID evaluations are rejected. Correct
+formatting errors normally; never change the accepted judgment to satisfy a
+validator. Do not hand-edit generated output. A new accepted evaluation uses
+a new ID; preserve prior evaluations and evaluation-method labels.
 
-## 3. Update `SystemDesignInterviewerAgent/progress/WEAKNESSES.md` by hand
+## 2. Update `SystemDesignInterviewerAgent/progress/WEAKNESSES.md` by hand
 
 This is the only progress file you write yourself, because deduping a failure
 mode is a judgement call. The command prints the canonical tags to apply.
 
 For each tag:
 
+- **Session already applied to this row** — leave hits and history unchanged.
+   Reconcile missing rows only; do not replay transitions on an identical retry.
 - **Tag already has a row** — increment `hits`, set `last seen` to this date,
   append the session ID to `Sessions`. Only open a second row under the same
   tag if the failure mode is genuinely distinct from the existing one.
-- **New tag** — add a row: `hits` 1, `first seen` and `last seen` both today,
+- **New tag** — add a row: `hits` 1, `first seen` and `last seen` both the attempt date,
   status `open`.
 - **Tag not flagged this session, but the concept was clearly exercised** —
   consider `open` → `improving`, or `improving` → `resolved` after two
@@ -124,15 +126,19 @@ For each tag:
 
 Never delete a row. Remove the `_none recorded yet_` placeholder on first write.
 
-## 4. Verify
+For clean exercises, record the session ID in the row's history/notes when
+changing status, so rerunning cannot count the same evidence twice. Reconcile
+backdated evaluations chronologically; never move last-seen dates backwards.
+
+## 3. Verify
 
 ```bash
-python3 SystemDesignInterviewerAgent/scripts/evaluate_session.py validate "<session-id>"
+python3 SystemDesignInterviewerAgent/scripts/progress.py validate "SystemDesignInterviewerAgent/sessions/<id>/evaluation.json"
 ```
 
-Confirms any retained transcript or recording still hashes to what was scored,
-that the card matches `evaluation.json`, and that no `.work/` state was left
-behind. Missing media is treated as deliberately pruned.
+Confirms the evaluation's scores and tags, cited excerpts when final text is
+retained, and agreement with the generated card, ledger and matrix. Missing
+historical media is allowed. This does not prove that conversational gates ran.
 
 ## Non-goals
 

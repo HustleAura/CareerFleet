@@ -1,109 +1,106 @@
-# Session Format
+# Accepted Evaluation Format
 
-A scored session is two files. Everything else it touches is working material
-that lives outside the session folder and can be deleted at any time.
+The interviewer manages transcription, refinement, clarification, judgment,
+and acceptance in the conversation. Only accepted results are stored here:
 
-```
-sessions/<session-id>/
-  evaluation.json       full structured audit bundle
-  card.md               generated from evaluation.json
-  .work/                in-flight state, gitignored, deleted at finalize
-
-recordings/<stem>.<ext>                 the video, gitignored
-transcripts/<session-id>.txt            verbatim ASR output, gitignored
-transcripts/<session-id>.frozen.txt     only when refinement changed something
+```text
+sessions/<session-id>/evaluation.json   accepted evaluation
+sessions/<session-id>/card.md           generated readable evaluation
+progress/sessions.jsonl                one summary per accepted evaluation
+progress/STATE.md                      generated proficiency matrix
+progress/WEAKNESSES.md                 agent-maintained weakness history
 ```
 
-The recording and transcript are referenced from `evaluation.json` by path and
-SHA-256, never copied into the session folder. Prune them whenever you like:
-`validate` treats a missing file as pruned and only complains when a file is
-still present but its bytes have changed.
+Raw and corrected transcripts stay under `transcripts/`; recordings stay under
+`recordings/`. They are not copied into the final evaluation directory. No
+workflow states, round packets, worker outputs, cryptographic bindings, or
+approval objects are stored. The agent is responsible for actual user acceptance.
 
-A transcript that the refinement pass did not change is frozen in place, so
-there is never a second copy of identical text.
+## Evaluation Object
 
-The session ID is the recording stem plus a timestamp, e.g.
-`2026-09-06 21-30-07_2026-09-06_2222`. It is the primary key everywhere.
+Use exactly these fields, plus optional `recording_path`:
 
-## Ownership
-
-`scripts/evaluate_session.py` performs every write to a session folder,
-`sessions.jsonl` and `STATE.md`. Nothing else may write them — not the
-orchestrator, not a skill, not by hand. Averages, attempt numbers and the 7×5
-matrix are arithmetic, and arithmetic belongs in code.
-
-`progress/WEAKNESSES.md` is the one exception: deduping a failure mode is a
-judgement call, so it stays hand-written.
-
-## Lifecycle
-
+```json
+{
+  "session_id": "<recording stem plus evaluation timestamp>",
+  "date": "2026-09-06",
+  "problem": "Key-value store",
+  "difficulty": "basic",
+  "standard_version": "single-agent-v1",
+  "raw_transcript_path": "transcripts/<raw>.txt",
+  "transcript_path": "transcripts/<final>.txt",
+  "scores": {
+    "overall": 5,
+    "requirements_scoping": 7,
+    "capacity_math": null,
+    "api_data_model": 3,
+    "architecture": 6,
+    "scale_reliability": 4,
+    "tradeoffs_communication": 6
+  },
+  "evidence": {
+    "overall": ["[12:04] exact excerpt"],
+    "requirements_scoping": ["[01:20] exact excerpt"],
+    "capacity_math": [],
+    "api_data_model": ["[08:41] exact excerpt"],
+    "architecture": ["[15:02] exact excerpt"],
+    "scale_reliability": ["[22:10] exact excerpt"],
+    "tradeoffs_communication": ["[26:55] exact excerpt"]
+  },
+  "rationales": {
+    "overall": "Explain coherence at the interview bar.",
+    "requirements_scoping": "Explain the evidence.",
+    "capacity_math": "Not demonstrated.",
+    "api_data_model": "Explain the evidence.",
+    "architecture": "Explain the evidence.",
+    "scale_reliability": "Explain the evidence.",
+    "tradeoffs_communication": "Explain the evidence."
+  },
+  "strengths": ["Specific strength", "Specific strength", "Specific strength"],
+  "weaknesses": [
+    {"tag": "api-design", "detail": "Specific failure mode"},
+    {"tag": "caching", "detail": "Specific failure mode"},
+    {"tag": "replication-consistency", "detail": "Specific failure mode"}
+  ],
+  "verdict": "Concise evidence-grounded assessment.",
+  "notes": ["Actual clarification answers and excluded or unavailable spans, if any."]
+}
 ```
-created → transcribed → frozen → judged → adjudicating → resolved → finalized
-                                             ↓
-                                        needs_review (blocks finalize)
+
+Replace illustrative scores and quotes with actual accepted findings. The date
+is the attempt/recording date. Paths are relative to `SystemDesignInterviewerAgent/`;
+raw and final paths may be identical when no correction was needed. `notes` may
+be empty. `standard_version` identifies the evaluation method, not a model name.
+Older progress rows retain their method. Overall is holistic; all seven
+dimensions always exist. Null scores require empty evidence; non-null scores
+require exact timestamped excerpts. RUBRIC.md defines difficulties and tags.
+
+## Record and Validate
+
+After explicit user acceptance, create a JSON submission outside the final
+session directory (for example `/tmp/<id>-evaluation.json`), then run from the
+workspace root:
+
+```bash
+python3 SystemDesignInterviewerAgent/scripts/progress.py record "/tmp/<id>-evaluation.json"
+python3 SystemDesignInterviewerAgent/scripts/progress.py validate "SystemDesignInterviewerAgent/sessions/<id>/evaluation.json"
 ```
 
-| Command | Effect |
-|---|---|
-| `init` | create the folder, hash the recording where it sits |
-| `transcribe` | write `transcripts/<session-id>.txt` |
-| `import --kind refinement` | store a refiner's findings |
-| `freeze` | pin the transcript hash that both judges must score |
-| `import --kind judgment` | validate and store a blind scorecard |
-| `disputes` | emit the anonymised adjudication packet |
-| `import --kind adjudication` | validate and store an adjudicator's decisions |
-| `resolve` | compute the canonical result |
-| `finalize` | write `evaluation.json` + `card.md`, delete `.work/` |
-| `record` | append to `sessions.jsonl`, rewrite `STATE.md` |
-| `validate` | re-check hashes and card/bundle agreement |
-| `status` | inspection |
+`record` validates and saves the final evaluation, derives the card, appends a
+ledger row once, and recomputes aggregates. Then reconcile WEAKNESSES.md using
+the track-progress skill. Same-ID identical resubmissions repair derived output
+without duplicating attempts; differing data for an existing ID is rejected.
+Use a new ID for a genuinely new accepted evaluation, never edit a recorded
+evaluation or card. A repeated evaluation is another evaluation, not evidence
+of improvement merely because its score changed.
 
-A finalized session is immutable. `load_state` refuses to reopen it and
-`finalize` cannot run twice. Corrections go in a new session.
+`validate` checks evaluation structure and agreement with the card, ledger, and
+matrix. Retained final transcripts are checked for cited excerpts. A missing
+transcript is permitted for historical validation and identical recorded retries,
+but a new ledger entry requires the final transcript. Without hashes this is not
+tamper detection, proof of user acceptance, or proof the conversational gates ran.
+Do not prune evidence until its evaluation has been recorded successfully.
 
-## Why two models
-
-A single evaluator's scores drift with the model behind it, and the drift is not
-a constant offset you can subtract out — it is case-specific and runs in both
-directions, so it cannot be corrected after the fact.
-
-So both models score the same frozen transcript independently, and disagreements
-are settled by argument rather than by whichever model happened to be running.
-
-- **Frozen input.** Each scorecard carries the transcript hash it scored.
-  `import` rejects any scorecard pinned to a different hash, so the two
-  evaluators provably read identical text.
-- **Blind.** Neither judge sees the other's output, the rubric aside.
-- **Anonymised adjudication.** Disputed dimensions are packaged as `A` and `B`
-  with model identity stripped. The A/B assignment is derived from the transcript
-  hash, so it is reproducible but carries no signal about who wrote which.
-  An adjudicator may be re-reading its own scorecard and cannot tell.
-- **Never averaged.** An adjudicator picks `A` or `B`. Both adjudicators must
-  land on the same letter or the session goes to `needs_review` and finalization
-  is blocked until a human settles it.
-- **Narrative follows the numbers.** Strengths and verdict come from whichever
-  judge the canonical scores overrode least, so the prose never contradicts the
-  table beside it.
-
-Only the canonical result reaches `progress/`. Both raw scorecards, the dispute
-packet, the A/B map and every adjudication stay in `evaluation.json` under
-`audit`, so any score can be traced back to the argument that produced it.
-
-## Determinism
-
-Routing, resolution, the matrix and the card are deterministic. **Model
-judgements are not** — the same model on the same transcript may not return the
-same scores twice. Before trusting a cross-model gate, measure the single-model
-noise floor by scoring one case twice with one model. A gate tighter than that
-floor is measuring noise.
-
-## Standard versions
-
-`standard_version` is stamped into every bundle so a later change to the scoring
-process is visible in the record rather than silently mixed into the averages.
-Every scored session is currently `v2` — the two-model panel with adjudication
-described above.
-
-Transcripts in `transcripts/` with no matching folder under `sessions/` are
-unscored archive material. Score one by running the normal lifecycle over it
-with `transcribe --from-file`.
+Writes replace individual files atomically; run recording commands serially.
+An interrupted write can be completed with the same submission. No resumable
+evaluation pipeline or migration of old workflow artifacts is provided.
