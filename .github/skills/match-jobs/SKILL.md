@@ -1,6 +1,6 @@
 ---
 name: match-jobs
-description: "Use for 'find matches', 'shortlist jobs for my resume', 'best three per company' or matching jobs. Fetch fresh listings for each new request, skip the applied CSV, assess all remaining JDs, allow labelled stretches and prioritize relevant AI engineering. Show results in chat and discard session data; no automatic tailoring or applications."
+description: "Use for 'find matches', 'shortlist jobs for my resume', 'best three per company' or matching jobs. Fetch fresh software-engineering listings for each new request, skip the applied CSV, assess all remaining eligible JDs, allow labelled stretches and prioritize relevant AI engineering. Show results in chat and discard session data; no automatic tailoring or applications."
 ---
 
 # Match Fresh Jobs
@@ -35,17 +35,20 @@ it does not assess JDs. Commands below run from the workspace root.
    history is a blocker, not permission to overwrite it or treat it as empty.
 3. Read the manifest and source receipts. Integrity-valid does not mean complete:
    retain blocked/partial/failed/disabled/not_scanned states. The helper removes
-   exactly tracked company/jobid pairs before preparing candidates. Report listed,
-   excluded-before-assessment, candidate and assessed counts separately. Never
+   exactly tracked company/jobid pairs from role-filtered listings before preparing
+   candidates. Report role/title exclusions and ambiguities, listed, applied
+   exclusions-before-assessment, candidate and assessed counts separately. Never
    assign fake fit decisions to applied exclusions. Do not modify collection files.
 
 ## Assess In Batches
 
 1. Work through every candidate in `candidates.json`, using batches of 10-20 complete
    JDs (smaller for long descriptions). Read all matching text and source fields, not
-   title-only summaries, first pages or top-N samples. Never add non-Amazon title/level/
-   years exclusions. Applied pairs are the only new pre-assessment exclusion.
-   Amazon input is listings, not the larger inventory. Preserve
+   title-only summaries, first pages or top-N samples. The shared software-role
+   filter and Amazon's additional SDE-II rule already gate every company's listings.
+   Never promote inventory-only or ambiguous titles into candidates, waive the role
+   filter for AI work, or add new level/years exclusions during assessment.
+   Input is listings for every company, not the larger inventory. Preserve
    source spelling of cities. Do not truncate text to fit a batch; reduce batch size.
 2. Keep assessment arrays in private files inside the matching session, e.g.
    `batch-001.json`. Set owner-only permissions immediately after editor creation.
@@ -137,7 +140,7 @@ it does not assess JDs. Commands below run from the workspace root.
 3. Present results directly in chat, all-company source states, applied exclusions,
    assessed/selected counts,
    relevant recommendations with direct job links, evidence IDs and largest gaps.
-   Make stretches and provisional shortlists prominent. Blocked Apple is not zero
+   Make stretches and provisional shortlists prominent. A blocked source is not zero
    openings. Review-needed and exploratory roles stay separate. State this session's fetch
    age and that scores are prioritization heuristics, not hiring odds or ATS predictions.
    All unselected assessments exist only until cleanup. Never promise a perfect fit.

@@ -546,6 +546,10 @@ def selection_output(manifest, candidates, records, now, applied=()):
             "details_complete": source.get("details_complete", False), "fetched_at": source.get("started_at"),
             "fetch_age_days": fetch_age(source.get("started_at"), now), "source_warnings": source.get("warnings", []),
             "source_errors": source.get("errors", []), "unresolved_location_count": source.get("unresolved_location_count", 0),
+            "role_excluded_count": source.get("role_excluded_count", 0),
+            "role_unresolved_count": source.get("role_unresolved_count", 0),
+            "title_excluded_count": source.get("title_excluded_count", 0),
+            "title_unresolved_count": source.get("title_unresolved_count", 0),
             "input_count": len(rows), "assessed_count": sum(row["key"] in by_key for row in rows),
             "selected_count": len(recommendations), "provisional": bool(provisional), "recommendations": recommendations,
             "needs_review": [row["key"] for row in rows if by_key[row["key"]]["decision"] == "needs_review" and (name, row["id"]) not in applied],
@@ -567,6 +571,8 @@ def render_shortlist(output, candidates):
             f"unresolved locations: {company['unresolved_location_count']}.",
             f"Fetched: {company['fetched_at'] or 'not available'}; age: {company['fetch_age_days']} days.",
             f"Listed: {company['listed_count']}; previously applied: {len(company['previously_applied'])}.",
+            f"Role exclusions: {company['role_excluded_count']}; ambiguous roles: {company['role_unresolved_count']}; "
+            f"all title exclusions: {company['title_excluded_count']}; ambiguous titles: {company['title_unresolved_count']}.",
             f"Assessed: {company['assessed_count']}/{company['input_count']} collected listings; selected: {company['selected_count']}.", ""])
         for warning in company["source_errors"] + company["source_warnings"]:
             lines.append("- " + markdown(warning))

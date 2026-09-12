@@ -8,11 +8,13 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
+from common import SUPPORTED_COMPANIES
+
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 TRACKER = MODULE_ROOT / "applied_jobs.csv"
 FIELDS = ("company", "jobid", "title")
-COMPANIES = ("amazon", "rubrik", "uber", "apple", "deshaw_india")
+COMPANIES = SUPPORTED_COMPANIES
 
 
 def tracker_path(path):
@@ -107,6 +109,8 @@ def initialize(path=TRACKER):
 
 
 def add(company, jobid, title, path=TRACKER):
+    if company not in COMPANIES:
+        raise ValueError("New applications require a currently supported company")
     row = {"company": company, "jobid": jobid, "title": title}
     validate_rows([row])
     with tracker_lock(path) as path:

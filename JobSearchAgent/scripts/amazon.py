@@ -1,26 +1,12 @@
 import json
-import re
 from urllib.parse import urlencode, urljoin
 
 from common import clean_text, posting, public_url, require_list, require_total
+from roles import amazon_title_filter as title_filter
 
 
 HOSTS = {"www.amazon.jobs", "amazon.jobs"}
 BASE = "https://www.amazon.jobs/en/search.json"
-SDE_TWO = re.compile(r"\b(?:sde|software\s+(?:(?:development|dev)\s+)?engineer)\s*[-,:]?\s*(?:ii|2)\b", re.I)
-OTHER_LEVEL = re.compile(r"\b(?:sde|software\s+(?:(?:development|dev)\s+)?engineer)\s*[-,:]?\s*(?:iii|iv|i|1|3|4)\b", re.I)
-OTHER_FAMILY = re.compile(r"\b(?:sdet|quality\s+assurance|software\s+test|manager|director|principal|staff)\b|\bengineer\s+(?:ii|2)\s+in\s+test\b", re.I)
-
-
-def title_filter(title):
-    normalized = title.replace("\u2013", "-").replace("\u2014", "-")
-    if not SDE_TWO.search(normalized):
-        return "excluded"
-    if OTHER_LEVEL.search(normalized) or re.search(r"\b(?:ii|2)\s*/\s*(?:iii|3)\b", normalized, re.I):
-        return "unresolved"
-    if OTHER_FAMILY.search(normalized):
-        return "excluded"
-    return "matched"
 
 
 def normalize(row):
@@ -46,7 +32,6 @@ def normalize(row):
                   preferred=clean_text(row.get("preferred_qualifications")),
                   published_at=row.get("posted_date"), updated_at=row.get("updated_time"),
                   job_type=row.get("job_schedule_type"), department=row.get("job_category"))
-    job["title_filter"] = title_filter(job["title"])
     if not cities:
         job["location_status"] = "unresolved"
         job["warnings"].append("Filtered API result has no exact requested India/city location pair")

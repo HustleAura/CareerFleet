@@ -9,8 +9,11 @@ from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
 
+from roles import ROLE_POLICY, classify_title, validate_role_policy
+
 
 TARGET_CITIES = ("Hyderabad", "Bengaluru")
+SUPPORTED_COMPANIES = ("amazon", "rubrik", "uber", "deshaw_india", "apple")
 
 
 def utc_now():
@@ -214,8 +217,11 @@ def posting(company, identity, title, url, locations, cities, description, **ext
 
 
 class ScanResult:
-    def __init__(self, company, cities=TARGET_CITIES):
+    def __init__(self, company, cities=TARGET_CITIES, role_policy=ROLE_POLICY):
+        if company not in SUPPORTED_COMPANIES:
+            raise ValueError("Unknown collection company")
         self.company = company
+        self.role_policy = validate_role_policy(role_policy)
         self.cities = tuple(cities)
         self.started_at = utc_now()
         self.records = {}
@@ -226,11 +232,13 @@ class ScanResult:
         self.access_status = "enabled"
 
     def add(self, job):
+        if job["company"] != self.company:
+            raise ValueError("Posting company differs from collection")
         if job["key"] in self.records:
             raise ValueError(f"Duplicate source posting ID: {job['id']}")
         job["fetched_at"] = utc_now()
         job["location_status"] = "in_scope" if city_keys(job["cities"]) & city_keys(self.cities) else job.get("location_status", "outside")
-        job.setdefault("title_filter", "not_applied")
+        job.update(classify_title(self.company, job["title"], self.role_policy))
         expiry = job.get("expires_at")
         if expiry:
             try:
@@ -253,7 +261,7 @@ class ScanResult:
 
     def selected(self):
         return [job for job in self.inventory() if job["expired"] is False
-                and job["title_filter"] in ("not_applied", "matched")]
+                and job["title_filter"] == "matched"]
 
     def receipt(self):
         inventory = self.inventory()
@@ -265,6 +273,7 @@ class ScanResult:
         else:
             status = "partial" if self.records else "failed"
         return {"company": self.company, "status": status, "started_at": self.started_at,
+                "role_filter_policy": self.role_policy,
                 "finished_at": utc_now(), "requested_cities": list(self.cities), "country": "India",
                 "inventory_complete": self.listing_complete, "details_complete": self.listing_complete and missing == 0,
                 "source_unique_count": len(self.records), "in_scope_count": len(inventory),
@@ -276,4 +285,6 @@ class ScanResult:
                 "exploratory_count": sum(job["exploratory"] for job in inventory),
                 "title_excluded_count": sum(job["title_filter"] == "excluded" for job in inventory),
                 "title_unresolved_count": sum(job["title_filter"] == "unresolved" for job in inventory),
+                "role_excluded_count": sum(job["role_filter"] == "excluded" for job in inventory),
+                "role_unresolved_count": sum(job["role_filter"] == "unresolved" for job in inventory),
                 "pages": self.pages, "errors": self.errors, "warnings": self.warnings}

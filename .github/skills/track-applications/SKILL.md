@@ -16,6 +16,8 @@ history. All commands run from the workspace root. No subagents or network calls
    Resolve all three fields from current-session listings/displayed results or
    explicit user details. Use original source `id` as `jobid`, not a guessed req
    or title-derived ID. Company keys: amazon, rubrik, uber, apple, deshaw_india.
+   For Apple, retain the original location-specific posting ID, not position_id.
+   Existing rows remain unchanged when recording additional applications.
    Map obvious company display names to these keys. If a title/reference is
    ambiguous, ask which job ID; don't fetch a new scan during recording.
 2. Read and validate history:
