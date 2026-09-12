@@ -2,7 +2,9 @@
 
 Research snapshot: 2026-09-09. Counts change and are not fixed test expectations.
 Source access conditions remain separate from technical verification. The
-clients support these five employers, not arbitrary ATS tenants.
+clients support these five employers, not arbitrary ATS tenants. Collect full
+public city-scoped inventories, then apply software_engineering_v1 eligibility
+locally for listings and matching. Amazon also retains its SDE-II restriction.
 
 ## Rubrik
 
@@ -45,7 +47,7 @@ the upstream 20-page cap. Total drift or repeated IDs is incomplete coverage.
 city outside scope does not invalidate a target secondary location.
 Descriptions, basic qualifications and preferred qualifications are inline.
 URL is the official origin plus `job_path`; keep `id_icims` as identity.
-Apply the local SDE-II filter only after this source collection.
+Apply the shared role filter and local SDE-II restriction after source collection.
 
 Research reconciled 1,767 unique two-city records, including 85 shared between
 cities. Implementation runs may differ as listings change.
@@ -107,43 +109,38 @@ All 17 research postings had nonempty matching public detail responses.
 
 ## Apple
 
-Live use is disabled unless approved access is recorded. The implemented format
-is paginated HTML with embedded data, not a separately documented JSON API.
-
 GET `https://jobs.apple.com/en-in/search?location=bengaluru-BGS&page=1`
-and the corresponding `hyderabad-HY1` search. Extract the script beginning
-`window.__staticRouterHydrationData = JSON.parse(`. Decode its JSON string
-argument and then the resulting JSON. Never execute or eval the script.
+and the corresponding `hyderabad-HY1` search. Parse the embedded script beginning
+`window.__staticRouterHydrationData = JSON.parse(` by decoding the JSON string
+argument and its JSON payload; do not execute the script.
 
 Read `loaderData.search.searchResults`, `totalRecords`, `queryParams`, `page`,
-and `filters.locations`. Paginate each city independently; after the last page
-Apple returns both an empty list and total zero. Reconcile each city's unique
-IDs against its original total, then deduplicate the combined inventory.
+and `filters.locations`. Paginate each city independently to an empty terminal
+page, reconcile unique IDs against the original total, then deduplicate the
+combined inventory. Match country `iso-country-IND` and `postLocation-BGS` or
+`postLocation-HY1` in the same location object. Broader India-wide pipeline jobs
+remain unresolved locations, not eligible exact-city candidates.
 
-Match country `iso-country-IND` and `postLocation-BGS`/`postLocation-HY1` in
-the same `locations[]` object. City text may be empty. Both city searches also
-return country-wide pipeline jobs; put those into unresolved locations.
-Research returned 93 Bengaluru-search and 70 Hyderabad-search records. Their
-union contained 154 IDs, of which 145 explicitly matched target cities and nine
-were country-wide.
+Follow the rendered public detail link. Read
+`loaderData.jobDetails.jobsData` for the full description, minimum/preferred
+qualifications and responsibilities. Verify the base positionId and exact
+country/cities. Detail locations use `id` where search locations use
+`postLocationId`. Preserve exploratory flags and original posting identities.
 
-Follow the rendered public detail href rather than guessing from a title.
-Decode `loaderData.jobDetails.jobsData` for full descriptions and qualifications.
-Compare base `positionId` plus exact country/city. A location-specific search
-ID such as `200682500-0321` may have detail ID `PIPE-200682500`; never replace
-the search identity or drop the original URL suffix. Detail location objects
-use `id` where search objects use `postLocationId`. Full description retrieval
-was spot-checked during research. Ongoing checks belong to the job-search path
-in the [test-agents skill](../../.github/skills/test-agents/SKILL.md); blocked
-or unexercised paths must be reported, not claimed as tested.
+A location-specific posting such as `200682500-0321` can have a detail ID such
+as `PIPE-200682500`. Keep the original search ID and URL suffix; use the verified
+positionId only for opportunity grouping. The shared software-role filter gates
+listings and matching after collection. Current format/coverage checks belong
+to the [test-agents skill](../../.github/skills/test-agents/SKILL.md).
 
 ## Phases
 
-1. Rubrik/Amazon direct JSON collection and Amazon-only title filtering.
+1. Rubrik/Amazon direct JSON collection and shared software-role filtering.
 2. D. E. Shaw/Apple embedded-JSON parsing and source-specific validation.
 3. Uber search-plus-detail collection.
 4. Fixed dispatcher, private atomic outputs, receipt validation and VS Code agent.
 
-Cross-company seniority inference, AI prioritization, resume fit and top-three
-selection are deferred. Do not treat this roadmap as authorization for those
-features or for a source's recurring automated access.
+Resume fit, AI prioritization within eligible roles and top-three selection are
+governed by [MATCHING_POLICY.md](../MATCHING_POLICY.md), not portal contracts.
+Cross-company seniority inference remains unsupported. These contracts do not
+authorize recurring automated access.

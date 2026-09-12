@@ -10,11 +10,11 @@ browser, API key or model subscription is needed by the collectors.
 
 | Company | Source | Role filter | Default |
 |---|---|---|---|
-| Rubrik | Public Greenhouse JSON | None | Enabled |
-| Amazon | Public search JSON, all pages | SDE-II title variants | Enabled, terms review warning |
-| D. E. Shaw India | JSON embedded in the careers HTML | None | Enabled, private personal use |
-| Uber | Oracle search JSON plus public details | None | Enabled, terms review warning |
-| Apple | JSON embedded in search/detail HTML | None | Blocked pending approved access |
+| Rubrik | Public Greenhouse JSON | Software-engineering titles | Enabled |
+| Amazon | Public search JSON, all pages | Software-engineering titles + existing SDE-II variants | Enabled, terms review warning |
+| D. E. Shaw India | JSON embedded in the careers HTML | Software-engineering titles | Enabled, private personal use |
+| Uber | Oracle search JSON plus public details | Software-engineering titles | Enabled, terms review warning |
+| Apple | Embedded JSON in public search/detail HTML | Software-engineering titles | Enabled |
 
 Public/active-state validation, ID deduplication and exact country/city checks
 apply to every company. No generic ATS adapter framework is used. Descriptions
@@ -38,6 +38,7 @@ The agent uses these commands from the CareerFleet workspace root:
 ```bash
 python3 -B JobSearchAgent/scripts/match.py start
 python3 -B JobSearchAgent/scripts/match.py start --company rubrik
+python3 -B JobSearchAgent/scripts/match.py start --company apple
 python3 -B JobSearchAgent/scripts/match.py start --company amazon --company deshaw_india --company uber
 python3 -B JobSearchAgent/scripts/scan.py --all --dry-run
 python3 -B JobSearchAgent/scripts/scan.py --validate "<printed-temporary-run>"
@@ -56,15 +57,19 @@ that path automatically and prints the owned root, run and matching session.
 
 Exit codes for start/scan: **0** all requested sources complete (or outputs valid),
 **2** at least one source partial, failed, disabled or blocked, **1** configuration,
-validation or persistence error. With the default Apple access gate, all-company start
-returns 2 even when the other four companies succeed. Read each receipt.
+validation or persistence error. All-company start succeeds when all five requested
+sources complete. Read each receipt.
+
+Apple uses `enabled: true` and `access: public_endpoint`. This is a non-gating
+source label; Apple uses the ordinary collection path without a separate approval
+step. Its search and detail parsing is described in [portal contracts](docs/portal-contracts.md#apple).
 
 ## Testing
 
 Ask **"test job search agent"** or **"test job search for Rubrik"** to invoke
 the [test-agents skill](../.github/skills/test-agents/SKILL.md). Its job-search
 path runs production collectors into a unique system temporary directory,
-checks city spellings and Amazon title rules, validates temporary results, reports
+checks city spellings, shared role eligibility and Amazon level rules, validates temporary results, reports
 source coverage and failures, and removes test artifacts afterward. It does not
 start a system-design interview or change the real applied tracker.
 
@@ -107,14 +112,16 @@ the root. No resume, interview or MCP files are modified. Global feeds and
 internal job payloads are not saved.
 
 - `inventory.json`: all public, city-scoped records retrieved, including
-  excluded Amazon titles and any expired records. Source field conflicts are
+  excluded/ambiguous roles, excluded Amazon levels and any expired records. Source field conflicts are
   retained as warnings.
-- `listings.json`: the displayable subset. Only Amazon applies title filtering.
+- `listings.json`: the displayable subset. All companies apply the shared software-role
+  filter; Amazon also applies its existing SDE-II restriction.
   Expired or unknown-expiry postings are withheld; exploratory postings remain
   included and labelled. Missing descriptions remain visible with a partial status.
 - `unresolved.json`: public postings with insufficient/conflicting location
-  evidence, such as Apple India-wide pipeline jobs or Rubrik remote-India jobs.
-- `receipt.json`: source page counts, unique IDs, city counts, title exclusions,
+  evidence, such as Rubrik remote-India jobs. These are audit records, not candidates.
+- `receipt.json`: source page counts, unique IDs, city counts, role policy, role
+  exclusions/ambiguities, combined title/level exclusions/ambiguities,
   missing descriptions, timestamps, completeness flags and errors.
 - `report.md`: all displayable jobs with links, plus per-company status and
   unresolved locations. There is no top-N truncation or fit ranking.
@@ -125,9 +132,33 @@ descriptions cannot silently become a successful empty result. A complete
 receipt is a point-in-time source inventory, not a guarantee that every employer
 is still hiring or that jobs remained unchanged throughout a paginated scan.
 
-## Amazon Filter
+## Role And Amazon Level Filters
 
-The client fetches the complete two-city inventory before locally selecting
+[search_config.json](search_config.json) requires
+`"role_filter": "software_engineering_v1"`. Missing/unsupported policies fail
+validation rather than silently disabling filtering.
+
+The shared [role classifier](scripts/roles.py) accepts SDE/SWE, Software Engineer,
+Software Development/Dev Engineer, Backend Engineer, Frontend Engineer and
+Full-Stack Engineer. Matching is case-insensitive with token boundaries, common
+space/hyphen variants, seniority prefixes and team suffixes.
+
+Explicit SRE/DevOps, QA/SDET/test, support, hardware, scientist, analyst and
+management specializations take precedence and are excluded, even with a software
+title. Domain/team names such as Inventory Management or Sales Data Services do
+not alone imply a management or sales role. Standalone Platform Engineer, AI Engineer and other unspecified engineering
+titles, or mixed eligible/unspecified engineering titles, remain unresolved.
+JD keywords cannot override eligibility. For example, Software Engineer, AI
+Platform qualifies, but Software Engineer - SRE does not.
+
+The filter gates listings-only requests as well as matching. Full city-scoped
+inventory remains in temporary storage for auditing. Receipts distinguish role
+exclusions/ambiguities from overall title exclusions/ambiguities; the overall
+counts also include Amazon level decisions, so these counts are not additive.
+Validation recomputes classifications from titles and the recorded policy.
+No new seniority or experience-year limits apply outside Amazon.
+
+The Amazon client fetches the complete two-city inventory before locally selecting
 SDE II / SDE 2, Software Development Engineer II, Software Dev Engineer II,
 and Software Engineer II variants. Matching is case-insensitive with token
 boundaries and optional punctuation/team suffixes. SDE III, SDET, support-only
@@ -148,13 +179,6 @@ There is no scheduler or automatic retry loop between runs.
   Uber's recruitment-specific access conditions remain unconfirmed. Both emit
   visible warnings for each on-demand run. Disable them in configuration if
   your intended access is not permitted.
-- Apple's website terms restrict automated extraction. The parser is implemented
-  and tested, but normal scans make **no Apple network requests**. Only after
-  obtaining an applicable permission or sanctioned access basis should the user
-  set Apple's `enabled` to `true`, `access` to `approved`, and a nonempty
-  `approval_reference` in [search_config.json](search_config.json). Configuration
-  records that basis; it does not confer permission. The agent must not create
-  approvals itself.
 
 GET requests are host-restricted, use a declared User-Agent, have timeouts and
 bounded retries, and honor bounded Retry-After delays. Authentication failures,
@@ -172,8 +196,10 @@ company,jobid,title
 It starts empty. Tell the agent which jobs you applied to and want recorded.
 The [track-applications skill](../.github/skills/track-applications/SKILL.md)
 resolves their exact IDs/titles and verifies the written rows. No dates, URLs,
-statuses or other columns are stored. Company keys are amazon, rubrik, uber,
-apple and deshaw_india. Job IDs remain strings; the title is informational.
+statuses or other columns are stored. Company keys are amazon, rubrik, uber, apple
+and deshaw_india. Existing rows survive later writes. Job IDs remain strings; the
+title is informational. Apple uses the original posting ID, including any location
+suffix, for applications; position_id is only an opportunity-grouping identity.
 
 Same company + jobid means already applied, even when its title changes. Repeated
 recording is a no-op, not another row or a silent title update. Different IDs with
@@ -213,10 +239,11 @@ start already prepares candidates, excluding exact tracked pairs. Lower-level
 prepare requires this request's temporary `--run`, an explicit temporary
 `--output-dir` and optional `--tracker`; no workspace or historical-run input.
 Every remaining candidate needs a disposition before finalization. Source totals,
-applied exclusions and assessment counts remain separate. Missing/partial/blocked
-sources stay visible; Apple blocked does not mean zero openings. A partial result
+role/title exclusions, applied exclusions and assessment counts remain separate. Missing/partial/blocked
+sources stay visible; a blocked source does not mean zero openings. A partial result
 stays PROVISIONAL. Empty descriptions/invalid expiry need review; exploratory
-postings are separate. No extra non-Amazon title/level/years prefilter.
+postings are separate. The shared role filter applies before assessment; no
+additional level/years prefilter is introduced during matching.
 
 Select **up to three per company**, never pad. Label defensible stretches and
 unmet minima. Prioritize relevant AI engineering among credible fits; neither

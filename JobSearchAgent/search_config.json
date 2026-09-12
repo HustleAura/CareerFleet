@@ -1,6 +1,7 @@
 {
   "country": "India",
   "cities": ["Hyderabad", "Bengaluru"],
+  "role_filter": "software_engineering_v1",
   "companies": {
     "rubrik": {
       "enabled": true,
@@ -23,10 +24,9 @@
       "note": "Public Oracle GET endpoints verified. Recruitment-specific access conditions need review before recurring use."
     },
     "apple": {
-      "enabled": false,
-      "access": "permission_required",
-      "approval_reference": "",
-      "note": "Apple terms restrict automated extraction. Enable only with an applicable permission or sanctioned access basis."
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Public careers search and detail pages with embedded JSON; collected on demand."
     }
   }
 }

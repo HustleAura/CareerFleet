@@ -25,7 +25,7 @@ tailoring is not covered by these workflows.
 1. Load `.github/skills/job-search/SKILL.md`, `.github/skills/match-jobs/SKILL.md`,
 	`.github/skills/track-applications/SKILL.md`, `JobSearchAgent/MATCHING_POLICY.md`,
 	`JobSearchAgent/templates/matches.schema.json` and the current resume base.
-	Test requested companies, all five by default. No old scan reuse, Apple setting
+	Test requested companies, all five by default. No old scan reuse, access setting
 	changes, restored test_jobs.py/fixtures, tailoring or design interview.
 2. Prefix results **TEST Matching**. Create a unique system-temp
 	test-careerfleet-matching-* root and explicitly initialize a temporary tracker:
@@ -39,7 +39,7 @@ tailoring is not covered by these workflows.
 	session root/run/session paths as well as the test root. Compare exact candidate
 	keys to fresh listings minus tracked company/jobid pairs. Never inject tests into
 	the real tracker. Hash resume/config and real tracker if present before/after.
-	Record collection exit/status separately; Apple remains BLOCKED, not PASS.
+	Record collection exit/status separately; scan only requested companies.
 3. Check missing, blocked and partial source states; city display/equivalence;
 	full JD fallback with empty optional fields; source qualification precedence;
 	expiry with an injected aware clock; exact opportunity identity grouping; owner
@@ -69,6 +69,12 @@ tailoring is not covered by these workflows.
 	changes honored at selection and unchanged fit/AI rules. Applied exclusions need
 	no invented semantic assessment. Inject failed writes/lock contention in memory
 	and assert old CSV bytes survive and application context is retained.
+	Check Apple recording using a temporary CSV containing an explicitly labelled
+	TEST apple row: read/list/validate and new apple adds must succeed. Duplicate
+	adds preserve the original title; adding any company must preserve existing rows.
+	Use original posting IDs, not position_id. Check position_id opportunity grouping
+	without merging identical titles with different position IDs. The real tracker
+	must remain unchanged.
 6. Perform real semantic assessment directly through match-jobs in bounded batches.
 	Audit recommendations against full JDs/resume blocks, then ingest, validate full
 	coverage, finalize and validate finals. A deliberately limited implementation
@@ -78,7 +84,7 @@ tailoring is not covered by these workflows.
 7. Inspect per-company counts, source/detail completeness, fetch ages, labels, evidence,
 	gaps, AI relevance, direct source links and separate review/exploratory rows. A
 	partial company remains provisional even after all collected jobs are assessed;
-	blocked Apple is not zero openings. Finalized files cannot be overwritten. Check
+	a blocked source is not zero openings. Finalized files cannot be overwritten. Check
 	frontmatter names/descriptions, referenced paths and available agent tools.
 8. For tracker/lifecycle implementation tests, small deterministic probes and a
 	fresh collection smoke check suffice; label full semantic assessment NOT RUN
@@ -108,28 +114,150 @@ tailoring is not covered by these workflows.
 	workspace root; all test run outputs must stay under this temporary root.
 	Do not write to `JobSearchAgent/runs/`, edit configuration, update resume
 	facts, or touch system-design recordings or progress.
-3. Check the local city and Amazon title rules in memory, without fixtures or
+3. Check the local city, shared role and Amazon level rules in memory, without fixtures or
 	persistent test files:
 
 	```bash
 	python3 -B - <<'PY'
+	import json
 	import sys
 	sys.path.insert(0, 'JobSearchAgent/scripts')
-	from common import city_name, city_keys, text_cities
+	from copy import deepcopy
+	from common import SUPPORTED_COMPANIES, PageData, ScanResult, posting, city_name, city_keys, text_cities
 	from amazon import title_filter
+	from apple import HOSTS, location_cities
+	from match import opportunity
+	from roles import ROLE_POLICY, classify_title, software_role_filter, validate_role_policy
+	from scan import CLIENTS, collect_company, load_config, validate_payload
+	config = load_config('JobSearchAgent/search_config.json')
+	assert set(CLIENTS) == set(SUPPORTED_COMPANIES) == set(config['companies'])
+	assert len(CLIENTS) == 5 and 'apple' in CLIENTS
+	assert config['companies']['apple']['enabled'] is True
+	assert config['companies']['apple']['access'] == 'public_endpoint'
+	assert 'approval_reference' not in config['companies']['apple']
+	assert config['role_filter'] == ROLE_POLICY
+	def rejects(function, *args):
+		try:
+			function(*args)
+		except ValueError:
+			return
+		raise AssertionError('Expected rejection')
+	rejects(collect_company, 'unknown_company', config)
+	def dispatch_probe(hosts):
+		assert hosts == HOSTS
+		raise ValueError('TEST: HTTP factory reached')
+	probe = collect_company('apple', config, http_factory=dispatch_probe)
+	assert probe.access_status == 'enabled'
+	assert probe.receipt()['status'] == 'failed'
+	assert probe.errors == ['ValueError: TEST: HTTP factory reached']
+	payload = {'loaderData': {'search': {'searchResults': []}}}
+	encoded = json.dumps(json.dumps(payload))
+	page = PageData('<script>window.__staticRouterHydrationData = JSON.parse(' + encoded + ');</script>')
+	assert page.apple_data() == payload
+	rejects(PageData('<script>unrelated()</script>').apple_data)
+	assert location_cities([{'countryID': 'iso-country-IND', 'postLocationId': 'postLocation-HY1'},
+						   {'countryID': 'iso-country-IND', 'id': 'postLocation-BGS'}]) == ['Hyderabad', 'Bengaluru']
+	assert location_cities([{'countryID': 'iso-country-USA', 'id': 'postLocation-BGS'}]) == []
+	first = posting('apple', '200000001-1', 'Software Engineer',
+					'https://example.invalid/test-1', [], ['Hyderabad'], 'TEST', position_id='200000001')
+	second = dict(first, id='200000001-2', key='apple:200000001-2', url='https://example.invalid/test-2')
+	distinct = dict(first, id='200000002-1', key='apple:200000002-1', position_id='200000002')
+	assert opportunity(first) == opportunity(second)
+	assert opportunity(first) != opportunity(distinct)
+	del second['position_id']
+	assert opportunity(first) != opportunity(second)
+	for policy in (None, '', 'all_roles', False):
+		rejects(validate_role_policy, policy)
 	assert city_name('bangalore') == 'Bangalore'
 	assert city_name('bengaluru') == 'Bengaluru'
 	assert text_cities('Bangalore, India') == ['Bangalore']
 	assert city_keys(['Bangalore']) == city_keys(['Bengaluru'])
 	assert not city_keys(['Hyderabad', 'Pune']) & city_keys(['Bengaluru'])
-	for title in ('SDE II', 'SDE-2, AI', 'Software Development Engineer II',
-					  'Software Dev Engineer 2', 'Software Engineer II, AWS'):
+	for title in ('SDE II', 'SDEII', 'SDE-2, AI', 'Software Development Engineer II',
+					  'Software Dev Engineer 2', 'Software Engineer II, AWS',
+					  'SDE II, Sales Data Services', 'Software Engineer II, Inventory Management'):
 		 assert title_filter(title) == 'matched', title
 	for title in ('SDE III', 'SDE I', 'SDET II', 'Applied Scientist II',
 					  'Software Development Engineer II in Test', 'Senior Software Engineer'):
 		 assert title_filter(title) == 'excluded', title
 	assert title_filter('SDE II/III') == 'unresolved'
-	print('TEST: city spelling, equivalent-city matching and Amazon title checks passed')
+	for title in ('SDE', 'SWE', 'SWE2', 'SDEII', 'Software Engineer', 'Software Development Engineer',
+				  'Software Dev Engineer', 'Senior Software Engineer, AI Platform',
+				  'Backend Engineer', 'Back-End Engineer', 'Front End Engineer',
+				  'Frontend Engineer', 'Fullstack Engineer', 'Full-Stack Engineer',
+				  'Staff Software Engineer', 'Software Engineer \u2014 Backend',
+				  'Software Engineer II, Inventory Management',
+				  'Software Engineer II, Sales Data Services',
+				  'SDE II - Multimedia, Hardware Compute Group',
+				  'Software Engineer, Support Tools', 'Software Engineer - Integration Support Tools'):
+		assert software_role_filter(title) == 'matched', title
+		for company in CLIENTS:
+			if company != 'amazon':
+				assert classify_title(company, title)['title_filter'] == 'matched', title
+	for title in ('SRE', 'DevOps Engineer', 'SDE-T', 'Software Engineer - SRE',
+				  'Backend Engineer, DevOps', 'Software Development Engineer in Test',
+				  'Software Engineer, QA', 'Software Engineer - Quality Assurance',
+				  'Software Engineer, Support', 'Hardware / Software Engineer',
+				  'Applied Scientist', 'Data Analyst', 'Software Engineering Manager',
+				  'Director, Software Engineer', 'Head of Software Engineer Development',
+				  'Software Engineer - Management', 'Software Engineer-Support',
+				  'Software Engineer / Support Engineer', 'Technical Support Software Engineer',
+				  'Software Engineer- Supply chain Integration Support',
+				  'Software Engineer - Quality',
+				  'Account Executive', 'SWEET Specialist', 'SWE2FA Specialist'):
+		assert software_role_filter(title) == 'excluded', title
+	for title in ('Platform Engineer', 'AI Engineer', 'Engineer II',
+				  'Software Engineer / Data Engineer'):
+		assert software_role_filter(title) == 'unresolved', title
+	for company in CLIENTS:
+		result = ScanResult(company)
+		for identity, title in enumerate(('Software Engineer II', 'Software Engineer - SRE',
+										'Platform Engineer', 'SDE II/III')):
+			job = posting(company, identity, title, 'https://example.invalid/test',
+						  [], ['Bangalore'], 'TEST: software engineering description')
+			job['title_filter'] = 'not_applied'
+			result.add(job)
+		result.listing_complete = True
+		assert result.selected()[0]['id'] == '0'
+		assert len(result.selected()) == (1 if company == 'amazon' else 2)
+		assert len(result.inventory()) == 4
+		assert result.receipt()['role_excluded_count'] == 1
+		assert result.receipt()['role_unresolved_count'] == 1
+		validate_payload(result.receipt(), result.inventory(), [], result.selected())
+		tampered = deepcopy(result.inventory())
+		tampered[1]['role_filter'] = tampered[1]['title_filter'] = 'matched'
+		receipt = result.receipt()
+		receipt['selected_count'] += 1
+		receipt['role_excluded_count'] -= 1
+		receipt['title_excluded_count'] -= 1
+		selected = [job for job in tampered if job['title_filter'] == 'matched']
+		rejects(validate_payload, receipt, tampered, [], selected)
+		receipt = result.receipt()
+		receipt['role_unresolved_count'] += 1
+		rejects(validate_payload, receipt, result.inventory(), [], result.selected())
+		receipt = result.receipt()
+		receipt['role_filter_policy'] = 'all_roles'
+		rejects(validate_payload, receipt, result.inventory(), [], result.selected())
+		empty = ScanResult(company)
+		empty.listing_complete = True
+		validate_payload(empty.receipt(), [], [], [])
+		assert empty.receipt()['status'] == 'complete'
+		states = ScanResult(company)
+		for identity, expiry, description, cities in (
+				('expired', '2000-01-01T00:00:00Z', 'TEST', ['Hyderabad']),
+				('invalid-expiry', 'not-a-date', 'TEST', ['Bengaluru']),
+				('missing-description', None, '', ['Bangalore']),
+				('broad-location', None, 'TEST', [])):
+			job = posting(company, identity, 'Software Engineer II',
+						  'https://example.invalid/test', [], cities, description)
+			job.update(expires_at=expiry, location_status='unresolved')
+			states.add(job)
+		states.listing_complete = True
+		assert {job['id'] for job in states.selected()} == {'missing-description'}
+		assert {job['id'] for job in states.unresolved()} == {'broad-location'}
+		assert states.receipt()['status'] == 'partial'
+		validate_payload(states.receipt(), states.inventory(), states.unresolved(), states.selected())
+	print('TEST: five companies, Apple dispatch/parser/grouping, city aliases, role/level filters and payload validation passed')
 	PY
 	```
 
@@ -156,9 +284,14 @@ tailoring is not covered by these workflows.
 	Amazon nested JSON locations, terminal pagination, SDE-II-only listings and
 	preservation of excluded titles in inventory; D. E. Shaw public records,
 	HTML qualification precedence and exploratory flags; Uber inner search
-	totals and matching public details; Apple country-wide rows, cross-city
-	duplicates and location-specific listing identity. The other four companies
-	must have no role filter. If a source did not run, mark its checks untested.
+	totals and matching public details; Apple per-city pagination, shared-city
+	deduplication, location-specific posting IDs and verified detail position IDs.
+	Every company's listings must pass the shared
+	role filter; Amazon also requires SDE II. Inspect actual accepted, excluded and
+	ambiguous titles for semantic mistakes, not only agreement with the classifier.
+	Role/level exclusions remain in inventory and counts must reconcile. Unrequested
+	companies must have no outputs or network requests. If a source did not run,
+	mark its checks untested.
 7. Check `--dry-run` on one requested, enabled company (prefer Rubrik for the
 	smallest request volume), using a nonexisting output path under the test
 	root. It still makes network requests. Confirm the path remains absent and

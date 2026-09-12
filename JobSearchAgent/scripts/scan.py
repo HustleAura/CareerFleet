@@ -14,7 +14,8 @@ import apple
 import deshaw_india
 import rubrik
 import uber
-from common import HttpClient, ScanResult, TARGET_CITIES, city_keys
+from common import HttpClient, ScanResult, SUPPORTED_COMPANIES, TARGET_CITIES, city_keys
+from roles import classify_title, validate_role_policy
 
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
@@ -23,18 +24,19 @@ CLIENTS = {"rubrik": rubrik, "amazon": amazon, "deshaw_india": deshaw_india, "ub
 
 def load_config(path):
     config = json.loads(Path(path).read_text(encoding="utf-8"))
+    validate_role_policy(config.get("role_filter"))
     if config.get("country") != "India":
         raise ValueError("Only India is supported")
     cities = config.get("cities")
     if not isinstance(cities, list) or not cities or any(city not in TARGET_CITIES for city in cities) or len(set(cities)) != len(cities):
         raise ValueError("cities must be a nonempty unique subset of Hyderabad and Bengaluru")
     companies = config.get("companies")
-    if not isinstance(companies, dict) or set(companies) != set(CLIENTS):
+    if not isinstance(companies, dict) or set(companies) != set(SUPPORTED_COMPANIES):
         raise ValueError("Configuration must name exactly the five supported companies")
     for name, entry in companies.items():
         if not isinstance(entry, dict) or not isinstance(entry.get("enabled"), bool):
             raise ValueError(f"{name}: enabled must be a boolean")
-        if entry.get("access") not in ("public_feed", "personal_use", "review_needed", "permission_required", "approved"):
+        if entry.get("access") not in ("public_feed", "public_endpoint", "personal_use", "review_needed", "permission_required", "approved"):
             raise ValueError(f"{name}: unrecognized access status")
         if entry.get("access") == "approved" and not str(entry.get("approval_reference", "")).strip():
             raise ValueError(f"{name}: approved access requires an approval_reference")
@@ -42,10 +44,12 @@ def load_config(path):
 
 
 def collect_company(name, config, http_factory=HttpClient):
+    if name not in CLIENTS:
+        raise ValueError("Unknown collection company")
     entry = config["companies"][name]
-    result = ScanResult(name, config["cities"])
+    result = ScanResult(name, config["cities"], config["role_filter"])
     result.warnings.append(entry.get("note", ""))
-    if entry["access"] == "permission_required" or (name == "apple" and entry["access"] != "approved"):
+    if entry["access"] == "permission_required":
         result.access_status = "blocked"
         result.errors.append("Automated access requires an applicable permission; no network request made")
         return result
@@ -72,7 +76,7 @@ def markdown_url(url):
 
 def report(results):
     cities = sorted({city for result in results for city in result.cities})
-    lines = ["# Job Search", "", f"India: {', '.join(cities)}. Amazon: SDE-II title filter only.", "",
+    lines = ["# Job Search", "", f"India: {', '.join(cities)}. Software-engineering roles only; Amazon also requires SDE II.", "",
              "Counts describe public source postings at fetch time, not a guarantee of active hiring.", "",
              "| Company | Status | Source IDs | City-scoped | Shown | Unresolved locations |",
              "|---|---|---:|---:|---:|---:|"]
@@ -86,6 +90,8 @@ def report(results):
             if message:
                 lines.append("- " + markdown(message))
         lines.extend(["", f"Inventory complete: {receipt['inventory_complete']}; descriptions complete: {receipt['details_complete']}.", "",
+                      f"Role exclusions: {receipt['role_excluded_count']}; ambiguous roles: {receipt['role_unresolved_count']}. "
+                      f"All title exclusions (including level): {receipt['title_excluded_count']}; ambiguous titles: {receipt['title_unresolved_count']}.", "",
                       "| Posting | Locations | Type | Notes |", "|---|---|---|---|"])
         for job in sorted(result.selected(), key=lambda item: (item["title"].casefold(), item["id"])):
             notes = list(job["warnings"])
@@ -95,15 +101,19 @@ def report(results):
         if not result.selected():
             lines.append("\nNo displayable postings from this result. Check status before interpreting this as zero openings.")
         if result.unresolved():
-            lines.extend(["", "### Unresolved Locations", ""])
+            lines.extend(["", "### Unresolved Locations (audit only; not eligible listings)", ""])
             for job in result.unresolved():
-                lines.append(f"- [{markdown(job['title'])}]({markdown_url(job['url'])}) ({markdown(job['id'])})")
+                if job["title_filter"] == "matched" and job["expired"] is False:
+                    lines.append(f"- [{markdown(job['title'])}]({markdown_url(job['url'])}) ({markdown(job['id'])})")
         if receipt["title_unresolved_count"]:
-            lines.extend(["", "Ambiguous Amazon level labels are retained in inventory.json for review."])
+            lines.extend(["", "Ambiguous role or Amazon level labels are retained in inventory.json for audit, not recommendations."])
     return "\n".join(lines) + "\n"
 
 
 def validate_payload(receipt, inventory, unresolved, selected):
+    if receipt["company"] not in CLIENTS:
+        raise ValueError("Unknown receipt company")
+    policy = validate_role_policy(receipt.get("role_filter_policy"))
     if receipt["status"] not in ("complete", "partial", "failed", "blocked", "disabled"):
         raise ValueError("Unknown receipt status")
     if not isinstance(inventory, list) or not isinstance(unresolved, list) or not isinstance(selected, list):
@@ -116,7 +126,7 @@ def validate_payload(receipt, inventory, unresolved, selected):
     if receipt["source_unique_count"] != len(inventory) + len(unresolved) + receipt["outside_count"] + receipt["nonpublic_count"]:
         raise ValueError("Source disposition counts do not reconcile")
     selected_keys = {job["key"] for job in selected}
-    expected_keys = {job["key"] for job in inventory if job["expired"] is False and job["title_filter"] in ("matched", "not_applied")}
+    expected_keys = {job["key"] for job in inventory if job["expired"] is False and job["title_filter"] == "matched"}
     if len(selected_keys) != len(selected) or selected_keys != expected_keys:
         raise ValueError("Selected output does not match the inventory filter")
     inventory_by_key = {job["key"]: job for job in inventory}
@@ -133,10 +143,15 @@ def validate_payload(receipt, inventory, unresolved, selected):
     for job in inventory:
         if job["company"] != receipt["company"] or not job["public"] or not city_keys(job["cities"]) & city_keys(receipt["requested_cities"]):
             raise ValueError("Inventory contains an invalid company, public flag or city")
-        if job["company"] == "amazon" and job["title_filter"] != amazon.title_filter(job["title"]):
-            raise ValueError("Amazon title filter is inconsistent")
-        if job["company"] != "amazon" and job["title_filter"] != "not_applied":
-            raise ValueError("Role filtering is not permitted for this company")
+    for job in inventory + unresolved:
+        for field, expected in classify_title(job["company"], job["title"], policy).items():
+            if job.get(field) != expected:
+                raise ValueError("Posting role/title filter is inconsistent")
+    for field in ("role_filter", "title_filter"):
+        for status in ("excluded", "unresolved"):
+            count = sum(job[field] == status for job in inventory)
+            if receipt[field.replace("_filter", "") + "_" + status + "_count"] != count:
+                raise ValueError("Role/title counts do not match inventory")
     if receipt["status"] == "complete" and (not receipt["inventory_complete"] or not receipt["details_complete"] or receipt["errors"]):
         raise ValueError("Complete status conflicts with coverage or errors")
 
@@ -189,7 +204,7 @@ def validate_run(directory):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Collect five company job boards; Amazon is filtered to SDE II.")
+    parser = argparse.ArgumentParser(description="Collect five company job boards for software-engineering roles; Amazon also requires SDE II.")
     targets = parser.add_mutually_exclusive_group()
     targets.add_argument("--company", action="append", choices=CLIENTS, help="Repeat for multiple companies")
     targets.add_argument("--all", action="store_true", help="Check all five companies, reporting access gates")
