@@ -11,7 +11,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from applications import TRACKER, applied_pairs, read_tracker, tracker_lock, tracker_path
-from scan import CLIENTS, collect_company, load_config, markdown, markdown_url, validate_run, write_file, write_run
+from common import CollectionCancelled
+from scan import (
+    CLIENTS, DEFAULT_WORKERS, collect_companies, load_config, markdown, markdown_url,
+    validate_run, validate_workers, write_file, write_run,
+)
 
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
@@ -665,7 +669,8 @@ def finalize_locked(session, now, applied):
         lock.rmdir()
 
 
-def start(companies=None, tracker=TRACKER):
+def start(companies=None, tracker=TRACKER, *, workers=DEFAULT_WORKERS):
+    workers = validate_workers(workers)
     tracker = tracker_path(tracker)
     read_tracker(tracker)
     companies = list(dict.fromkeys(companies or CLIENTS))
@@ -675,10 +680,7 @@ def start(companies=None, tracker=TRACKER):
     root = Path(tempfile.mkdtemp(prefix="careerfleet-jobs-")).resolve()
     try:
         write_file(root / ".careerfleet-session.json", encoded({"tracker": str(tracker)}))
-        results = []
-        for name in companies:
-            print(f"Collecting {name}...", file=sys.stderr)
-            results.append(collect_company(name, config))
+        results = collect_companies(companies, config, workers=workers)
         run = write_run(results, root / "collection")
         session = prepare(run, root / "matching", companies, tracker=tracker)
         progress = validate(session)
@@ -720,6 +722,8 @@ def main(argv=None):
     command = commands.add_parser("start", help="Fetch fresh listings and prepare temporary un-applied candidates")
     command.add_argument("--company", action="append", choices=CLIENTS)
     command.add_argument("--tracker", type=Path, default=TRACKER)
+    command.add_argument("--workers", type=int, choices=range(1, len(CLIENTS) + 1), default=DEFAULT_WORKERS,
+                         help=f"Concurrent company scans (default: {DEFAULT_WORKERS}); use 1 for sequential collection")
     command = commands.add_parser("cleanup", help="Remove only this session's temporary files after recording applications")
     command.add_argument("root", type=Path)
     command.add_argument("--recorded", action="append", default=[], metavar="COMPANY:JOBID")
@@ -737,7 +741,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == "start":
-            result = start(args.company, args.tracker)
+            result = start(args.company, args.tracker, workers=args.workers)
             print(encoded(result))
             return 0 if all(value == "complete" for value in result["source_statuses"].values()) else 2
         elif args.command == "cleanup":
@@ -751,6 +755,9 @@ def main(argv=None):
         elif args.command == "finalize":
             print(finalize(args.session))
         return 0
+    except (KeyboardInterrupt, CollectionCancelled):
+        print("Operation cancelled.", file=sys.stderr)
+        return 130
     except (ValueError, KeyError, TypeError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

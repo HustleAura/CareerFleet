@@ -1,6 +1,6 @@
 ---
 name: job-search
-description: "Use to find fresh software-engineering jobs, fetch listings, or list openings at Amazon, Rubrik, Uber, Apple and D. E. Shaw India. Every search fetches current Hyderabad/Bengaluru listings, excludes the applied CSV and continues to resume matching unless listings-only is requested. Temporary session data only; never automatically tailor or apply."
+description: "Find fresh software-engineering openings at Amazon, Rubrik, Uber, Apple, D. E. Shaw India, Stripe, Databricks, Snowflake, Rippling, Arcesium, Atlassian, Salesforce, Adobe, Microsoft and Intuit. Fetch current Hyderabad/Bengaluru listings, exclude applied jobs and continue to resume matching unless listings-only is requested. Temporary session data only; never automatically tailor or apply."
 ---
 
 # Job Search
@@ -11,9 +11,14 @@ The complete source contracts are in `JobSearchAgent/docs/portal-contracts.md`.
 
 ## Procedure
 
-1. Resolve requested company names to `amazon`, `rubrik`, `uber`, `apple`, or
-   `deshaw_india`. Use all five when the user requests all companies. Do not
-   add other employers or expand beyond the configured India cities.
+1. Resolve requested company names to `amazon`, `rubrik`, `uber`, `apple`,
+   `deshaw_india`, `stripe`, `databricks`, `snowflake`, `rippling`, `arcesium`,
+   `atlassian`, `salesforce`, `adobe`, `microsoft`, or `intuit`. Resolve Ripling
+   to `rippling`. Use all fifteen by default or when all companies are requested.
+   NVIDIA is not supported yet: report its unverified collection contract rather
+   than attempting an ad hoc fetch. Salesforce covers its main external board
+   only, not separate brand/research/early-career boards. Do not expand beyond
+   these sources or the configured India cities.
 2. Start a fresh temporary collection and matching preparation exactly once for
   each new search request. Do not reuse old scans, search workspace listings,
   merge previous dates, or call start again during assessment/application updates.
@@ -24,8 +29,16 @@ The complete source contracts are in `JobSearchAgent/docs/portal-contracts.md`.
   python3 -B JobSearchAgent/scripts/match.py start
   python3 -B JobSearchAgent/scripts/match.py start --company amazon --company rubrik
   python3 -B JobSearchAgent/scripts/match.py start --company apple
+  python3 -B JobSearchAgent/scripts/match.py start --company microsoft --company intuit
+  python3 -B JobSearchAgent/scripts/match.py start --workers 1
    ```
 
+  Default collection uses up to fifteen Python company workers; `--workers N`
+  bounds concurrency and 1 is sequential mode. Each worker runs its existing
+  collection and location/public-state/title filtering only. Shared hosts are
+  not separately serialized, and per-company pacing/retries remain unchanged.
+  Do not launch LLM subagents or multiple start commands to obtain concurrency.
+  Progress/timing is on stderr; outputs stay in requested-company order.
   Record the printed root, run and session paths in the conversation for cleanup
   and application follow-up. Files are private and only under system temp. For a
   test, follow test-agents and supply its temporary --tracker, never the real CSV.
@@ -34,6 +47,10 @@ The complete source contracts are in `JobSearchAgent/docs/portal-contracts.md`.
    retry access blocks, change hosts, use proxies, or fall back to a browser.
    A transient/schema failure may need a client repair; preserve the partial
   result for this session and report its limitation.
+  The dispatcher isolates expected source failures; do not automatically retry
+  the run sequentially. Cancellation returns 130 after started workers settle
+  and the coordinator handles cleanup. No output from unfinished workers is
+  treated as a complete run.
 4. Validate this request's temporary collection:
 
    ```bash
@@ -72,6 +89,8 @@ The complete source contracts are in `JobSearchAgent/docs/portal-contracts.md`.
 - Standalone Platform Engineer, AI Engineer and other unspecified engineering
   titles are unresolved, not recommendations. JD keywords cannot override title
   eligibility. AI priority applies only to eligible software-engineering roles.
+  Adobe Computer Scientist titles remain excluded, even with software-development
+  duties or an old Software Engineer title in the posting URL.
 - Amazon additionally requires its existing SDE II/SDE 2 or full
   software-engineer-II variants. Do not infer level from years, pay, or "II" in
   the description. Other companies have no added seniority or years filter.
@@ -82,6 +101,12 @@ The complete source contracts are in `JobSearchAgent/docs/portal-contracts.md`.
   roles/Amazon title levels are retained in inventory but not shown as eligible.
 - `complete` describes source coverage at the fetch time. It does not prove
   actual hiring activity, access permission, or candidate eligibility.
+  Preserve the source scope: Stripe's public site differs from its Greenhouse
+  feed; Atlassian has no independent ATS total; Salesforce is main-board-only;
+  Adobe's Workday and Phenom inventories can differ. A successfully parsed
+  sample or a public search cap is not complete inventory coverage.
+  Permissions are user-managed; do not add a permission investigation or modify
+  source settings. Technical blocks still stop collection without a browser fallback.
 - Source data may include stale or conflicting fields. Preserve warnings,
   especially Rubrik office discrepancies and D. E. Shaw qualification variants.
 - Preserve `Bangalore` spelling in source-derived output. It remains equivalent

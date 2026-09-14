@@ -5,21 +5,47 @@ import re
 import shutil
 import sys
 import tempfile
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Event
+from time import monotonic
 from uuid import uuid4
 
+import adobe
 import amazon
 import apple
+import arcesium
+import atlassian
+import databricks
 import deshaw_india
+import intuit
+import microsoft
+import rippling
 import rubrik
+import salesforce
+import snowflake
+import stripe
 import uber
-from common import HttpClient, ScanResult, SUPPORTED_COMPANIES, TARGET_CITIES, city_keys
+from common import CollectionCancelled, HttpClient, ScanResult, SUPPORTED_COMPANIES, TARGET_CITIES, city_keys
 from roles import classify_title, validate_role_policy
 
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
-CLIENTS = {"rubrik": rubrik, "amazon": amazon, "deshaw_india": deshaw_india, "uber": uber, "apple": apple}
+CLIENTS = {
+    "rubrik": rubrik, "amazon": amazon, "deshaw_india": deshaw_india, "uber": uber,
+    "apple": apple, "stripe": stripe, "databricks": databricks, "snowflake": snowflake,
+    "rippling": rippling, "arcesium": arcesium, "atlassian": atlassian,
+    "salesforce": salesforce, "adobe": adobe, "microsoft": microsoft, "intuit": intuit,
+}
+DEFAULT_WORKERS = len(CLIENTS)
+
+
+def validate_workers(workers):
+    if type(workers) is not int or not 1 <= workers <= len(CLIENTS):
+        raise ValueError(f"workers must be an integer between 1 and {len(CLIENTS)}")
+    return workers
 
 
 def load_config(path):
@@ -32,7 +58,7 @@ def load_config(path):
         raise ValueError("cities must be a nonempty unique subset of Hyderabad and Bengaluru")
     companies = config.get("companies")
     if not isinstance(companies, dict) or set(companies) != set(SUPPORTED_COMPANIES):
-        raise ValueError("Configuration must name exactly the five supported companies")
+        raise ValueError("Configuration must name exactly the supported companies")
     for name, entry in companies.items():
         if not isinstance(entry, dict) or not isinstance(entry.get("enabled"), bool):
             raise ValueError(f"{name}: enabled must be a boolean")
@@ -52,15 +78,68 @@ def collect_company(name, config, http_factory=HttpClient):
     if entry["access"] == "permission_required":
         result.access_status = "blocked"
         result.errors.append("Automated access requires an applicable permission; no network request made")
-        return result
+        return result.finish()
     if not entry["enabled"]:
         result.access_status = "disabled"
-        return result
+        return result.finish()
     try:
         CLIENTS[name].collect(http_factory(CLIENTS[name].HOSTS), result)
     except (ValueError, KeyError, TypeError, AttributeError, UnicodeError, OSError) as error:
         result.errors.append(f"{type(error).__name__}: {error}")
-    return result
+    return result.finish()
+
+
+def collect_companies(names, config, *, workers=DEFAULT_WORKERS):
+    workers = validate_workers(workers)
+    names = list(dict.fromkeys(names))
+    if not names or any(name not in CLIENTS for name in names):
+        raise ValueError("Collection requires a nonempty set of supported companies")
+    config = deepcopy(config)
+    workers = min(workers, len(names))
+    cancelled = Event()
+    started = monotonic()
+    order = {name: index for index, name in enumerate(names)}
+    pending = iter(names)
+    active = {}
+    results = {}
+    executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="careerfleet-company")
+
+    def client_factory(hosts):
+        return HttpClient(hosts, cancel_event=cancelled)
+
+    def submit_next():
+        name = next(pending, None)
+        if name is not None:
+            print(f"Collecting {name}...", file=sys.stderr, flush=True)
+            active[executor.submit(collect_company, name, config, client_factory)] = name
+
+    try:
+        for unused in range(workers):
+            submit_next()
+        while active:
+            finished, unused = wait(active, return_when=FIRST_COMPLETED)
+            for future in sorted(finished, key=lambda item: order[active[item]]):
+                name = active.pop(future)
+                result = future.result()
+                receipt = result.receipt()
+                if result.company != name:
+                    raise ValueError("Worker returned a different company's results")
+                validate_payload(receipt, result.inventory(), result.unresolved(), result.selected())
+                results[name] = result
+                print(f"Finished {name}: {receipt['status']} ({result.elapsed_seconds:.3f}s)",
+                      file=sys.stderr, flush=True)
+            for unused in finished:
+                submit_next()
+    except BaseException:
+        cancelled.set()
+        for future in active:
+            future.cancel()
+        raise
+    finally:
+        executor.shutdown(wait=True, cancel_futures=cancelled.is_set())
+    print(f"Collection elapsed: {monotonic() - started:.3f}s; company workers: {workers}",
+          file=sys.stderr, flush=True)
+    return [results[name] for name in names]
 
 
 def markdown(value):
@@ -204,10 +283,12 @@ def validate_run(directory):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Collect five company job boards for software-engineering roles; Amazon also requires SDE II.")
+    parser = argparse.ArgumentParser(description="Collect supported company job boards for software-engineering roles; Amazon also requires SDE II.")
     targets = parser.add_mutually_exclusive_group()
     targets.add_argument("--company", action="append", choices=CLIENTS, help="Repeat for multiple companies")
-    targets.add_argument("--all", action="store_true", help="Check all five companies, reporting access gates")
+    targets.add_argument("--all", action="store_true", help="Check all supported companies, reporting source status")
+    parser.add_argument("--workers", type=int, choices=range(1, len(CLIENTS) + 1), default=DEFAULT_WORKERS,
+                        help=f"Concurrent company scans (default: {DEFAULT_WORKERS}); use 1 for sequential collection")
     parser.add_argument("--config", type=Path, default=MODULE_ROOT / "search_config.json")
     parser.add_argument("--output-dir", type=Path, help="Explicit system-temp parent for this session's run")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and validate without writing outputs")
@@ -223,12 +304,7 @@ def main(argv=None):
                 raise ValueError("Collection requires --output-dir inside system temp; use match.py start for a fresh session")
         config = load_config(args.config)
         names = list(dict.fromkeys(args.company or CLIENTS))
-        results = []
-        for name in names:
-            print(f"Collecting {name}...", file=sys.stderr)
-            result = collect_company(name, config)
-            validate_payload(result.receipt(), result.inventory(), result.unresolved(), result.selected())
-            results.append(result)
+        results = collect_companies(names, config, workers=args.workers)
         receipts = [result.receipt() for result in results]
         destination = None if args.dry_run else write_run(results, args.output_dir)
         if args.json:
@@ -242,6 +318,9 @@ def main(argv=None):
             if destination:
                 print(f"Report: {destination / 'report.md'}")
         return 0 if all(receipt["status"] == "complete" for receipt in receipts) else 2
+    except (KeyboardInterrupt, CollectionCancelled):
+        print("Collection cancelled.", file=sys.stderr)
+        return 130
     except (ValueError, KeyError, TypeError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
