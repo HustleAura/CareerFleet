@@ -13,7 +13,17 @@ from roles import ROLE_POLICY, classify_title, validate_role_policy
 
 
 TARGET_CITIES = ("Hyderabad", "Bengaluru")
-SUPPORTED_COMPANIES = ("amazon", "rubrik", "uber", "deshaw_india", "apple")
+SUPPORTED_COMPANIES = (
+    "amazon", "rubrik", "uber", "deshaw_india", "apple", "stripe", "databricks",
+    "snowflake", "rippling", "arcesium", "atlassian", "salesforce", "adobe",
+    "microsoft", "intuit",
+)
+SEARCH_POST_URLS = {
+    "https://salesforce.wd12.myworkdayjobs.com/wday/cxs/salesforce/External_Career_Site/jobs",
+    "https://adobe.wd5.myworkdayjobs.com/wday/cxs/adobe/external_experienced/jobs",
+}
+SEARCH_HEADER_HOST = "6fnax3tbef-dsn.algolia.net"
+SEARCH_HEADERS = {"X-Algolia-Application-Id", "X-Algolia-API-Key"}
 
 
 def utc_now():
@@ -21,6 +31,10 @@ def utc_now():
 
 
 class FetchError(ValueError):
+    pass
+
+
+class CollectionCancelled(Exception):
     pass
 
 
@@ -35,36 +49,73 @@ def public_url(url, hosts):
 
 
 class RestrictedRedirect(urllib.request.HTTPRedirectHandler):
-    def __init__(self, hosts):
+    def __init__(self, hosts, same_origin=False, reject_redirects=False):
         self.hosts = hosts
+        self.same_origin = same_origin
+        self.reject_redirects = reject_redirects
 
     def redirect_request(self, request, response, code, message, headers, new_url):
         public_url(new_url, self.hosts)
+        if self.reject_redirects:
+            raise FetchError("Search POST redirects are not supported")
+        if self.same_origin and urllib.parse.urlsplit(request.full_url).hostname != urllib.parse.urlsplit(new_url).hostname:
+            raise FetchError("Search headers must not cross origins")
         return super().redirect_request(request, response, code, message, headers, new_url)
 
 
 class HttpClient:
-    def __init__(self, hosts, timeout=30, attempts=3, max_bytes=20_000_000):
+    def __init__(self, hosts, timeout=30, attempts=3, max_bytes=20_000_000, *, cancel_event=None):
         self.hosts = set(hosts)
         self.timeout = timeout
         self.attempts = attempts
         self.max_bytes = max_bytes
+        self.cancel_event = cancel_event
         self.opener = urllib.request.build_opener(RestrictedRedirect(self.hosts))
 
-    def text(self, url):
+    def _check_cancelled(self):
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise CollectionCancelled("Company collection was cancelled")
+
+    def _wait_for_retry(self, delay):
+        if self.cancel_event is None:
+            time.sleep(delay)
+        elif self.cancel_event.wait(delay):
+            raise CollectionCancelled("Company collection was cancelled during retry wait")
+
+    def text(self, url, *, headers=None):
+        return self._text(url, headers=headers)
+
+    def _text(self, url, *, headers=None, body=None):
+        self._check_cancelled()
         public_url(url, self.hosts)
+        request_headers = {
+            "User-Agent": "CareerFleetJobSearch/1.0 (personal job discovery)",
+            "Accept": "application/json, text/html;q=0.9",
+        }
+        if headers is not None:
+            if (not isinstance(headers, dict) or set(headers) != SEARCH_HEADERS
+                    or urllib.parse.urlsplit(url).hostname != SEARCH_HEADER_HOST):
+                raise FetchError("Custom headers are restricted to the public Rippling search origin")
+            for value in headers.values():
+                if not isinstance(value, str) or not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value):
+                    raise FetchError("Invalid public search header value")
+            request_headers.update(headers)
+        if body is not None:
+            if url not in SEARCH_POST_URLS or headers is not None:
+                raise FetchError("POST is restricted to the verified public Workday search endpoints")
+            request_headers["Content-Type"] = "application/json"
+        opener = self.opener if headers is None and body is None else urllib.request.build_opener(
+            RestrictedRedirect(self.hosts, same_origin=True, reject_redirects=body is not None))
         for attempt in range(self.attempts):
-            request = urllib.request.Request(url, headers={
-                "User-Agent": "CareerFleetJobSearch/1.0 (personal job discovery)",
-                "Accept": "application/json, text/html;q=0.9",
-            })
+            self._check_cancelled()
+            request = urllib.request.Request(url, data=body, headers=request_headers)
             try:
-                with self.opener.open(request, timeout=self.timeout) as response:
-                    body = response.read(self.max_bytes + 1)
-                    if len(body) > self.max_bytes:
+                with opener.open(request, timeout=self.timeout) as response:
+                    response_body = response.read(self.max_bytes + 1)
+                    if len(response_body) > self.max_bytes:
                         raise FetchError("Response exceeded the size limit; collection is incomplete")
                     charset = response.headers.get_content_charset() or "utf-8"
-                    return body.decode(charset)
+                    return response_body.decode(charset)
             except urllib.error.HTTPError as error:
                 if error.code in (401, 403):
                     raise FetchError(f"HTTP {error.code}: access blocked; no bypass attempted") from error
@@ -83,15 +134,30 @@ class HttpClient:
                             raise FetchError("Unrecognized Retry-After; retry on a later run") from error
                 if delay > 30:
                     raise FetchError("Rate limited; Retry-After exceeds this run's retry budget") from error
-                time.sleep(delay)
+                self._wait_for_retry(delay)
             except (urllib.error.URLError, TimeoutError, OSError) as error:
                 if attempt + 1 == self.attempts:
                     raise FetchError(f"Network request failed: {type(error).__name__}") from error
-                time.sleep(2 ** attempt)
+                self._wait_for_retry(2 ** attempt)
 
-    def json(self, url):
+    def json(self, url, *, headers=None):
+        return self._json(self.text(url) if headers is None else self.text(url, headers=headers))
+
+    def post_json(self, url, payload):
+        if url not in SEARCH_POST_URLS:
+            raise FetchError("POST is restricted to the verified public Workday search endpoints")
+        if not isinstance(payload, dict) or set(payload) != {"appliedFacets", "limit", "offset", "searchText"}:
+            raise FetchError("Expected a read-only Workday search payload")
+        if (not isinstance(payload["appliedFacets"], dict) or not isinstance(payload["searchText"], str)
+                or type(payload["limit"]) is not int or payload["limit"] <= 0
+                or type(payload["offset"]) is not int or payload["offset"] < 0):
+            raise FetchError("Invalid Workday search filters or pagination")
+        return self._json(self._text(url, body=json.dumps(payload, ensure_ascii=True).encode("utf-8")))
+
+    @staticmethod
+    def _json(text):
         try:
-            return json.loads(self.text(url))
+            return json.loads(text)
         except json.JSONDecodeError as error:
             raise FetchError("Expected JSON, received an invalid response or challenge page") from error
 
@@ -224,12 +290,21 @@ class ScanResult:
         self.role_policy = validate_role_policy(role_policy)
         self.cities = tuple(cities)
         self.started_at = utc_now()
+        self._started_monotonic = time.monotonic()
+        self.finished_at = None
+        self.elapsed_seconds = None
         self.records = {}
         self.errors = []
         self.warnings = []
         self.pages = []
         self.listing_complete = False
         self.access_status = "enabled"
+
+    def finish(self):
+        if self.finished_at is None:
+            self.finished_at = utc_now()
+            self.elapsed_seconds = round(time.monotonic() - self._started_monotonic, 3)
+        return self
 
     def add(self, job):
         if job["company"] != self.company:
@@ -274,7 +349,8 @@ class ScanResult:
             status = "partial" if self.records else "failed"
         return {"company": self.company, "status": status, "started_at": self.started_at,
                 "role_filter_policy": self.role_policy,
-                "finished_at": utc_now(), "requested_cities": list(self.cities), "country": "India",
+                "finished_at": self.finished_at or utc_now(), "elapsed_seconds": self.elapsed_seconds,
+                "requested_cities": list(self.cities), "country": "India",
                 "inventory_complete": self.listing_complete, "details_complete": self.listing_complete and missing == 0,
                 "source_unique_count": len(self.records), "in_scope_count": len(inventory),
                 "unresolved_location_count": len(self.unresolved()),

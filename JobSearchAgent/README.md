@@ -4,7 +4,8 @@ Company-specific, on-demand job collection for **Hyderabad and Bengaluru,
 India**, with fresh collection on every search, resume matching in chat and a
 three-column applied-jobs CSV. Only that CSV persists between sessions.
 Python 3.9+ and its standard library are sufficient; no installation,
-browser, API key or model subscription is needed by the collectors.
+browser, private API credential or model subscription is needed by the collectors.
+Rippling's public search credential is read from its official frontend per run.
 
 ## Scope
 
@@ -15,6 +16,22 @@ browser, API key or model subscription is needed by the collectors.
 | D. E. Shaw India | JSON embedded in the careers HTML | Software-engineering titles | Enabled, private personal use |
 | Uber | Oracle search JSON plus public details | Software-engineering titles | Enabled, terms review warning |
 | Apple | Embedded JSON in public search/detail HTML | Software-engineering titles | Enabled |
+| Stripe | Official Next.js careers index and details | Software-engineering titles | Enabled |
+| Databricks | Public Greenhouse JSON | Software-engineering titles | Enabled |
+| Snowflake | Public sitemap and full Phenom details, search-total reconciliation | Software-engineering titles | Enabled |
+| Rippling | Public Algolia search plus native ATS details | Software-engineering titles | Enabled |
+| Arcesium | Public Greenhouse JSON and office ancestry | Software-engineering titles | Enabled |
+| Atlassian | Official careers JSON with full descriptions | Software-engineering titles | Enabled |
+| Salesforce | Workday main external board search and details | Software-engineering titles | Enabled |
+| Adobe | Workday experienced-hire board search and details | Software-engineering titles | Enabled |
+| Microsoft | Current Eightfold search and full details | Software-engineering titles | Enabled |
+| Intuit | Public India location lists and detail JSON-LD | Software-engineering titles | Enabled |
+
+Default searches cover all fifteen companies. NVIDIA is deferred because its
+current collection contract is unverified; no guessed legacy client is included.
+Salesforce covers only `External_Career_Site`, not separate brand, research or
+early-career boards. Adobe's Computer Scientist titles remain excluded by the
+unchanged title policy even when their descriptions involve software development.
 
 Public/active-state validation, ID deduplication and exact country/city checks
 apply to every company. No generic ATS adapter framework is used. Descriptions
@@ -40,6 +57,8 @@ python3 -B JobSearchAgent/scripts/match.py start
 python3 -B JobSearchAgent/scripts/match.py start --company rubrik
 python3 -B JobSearchAgent/scripts/match.py start --company apple
 python3 -B JobSearchAgent/scripts/match.py start --company amazon --company deshaw_india --company uber
+python3 -B JobSearchAgent/scripts/match.py start --company microsoft --company intuit
+python3 -B JobSearchAgent/scripts/match.py start --workers 1
 python3 -B JobSearchAgent/scripts/scan.py --all --dry-run
 python3 -B JobSearchAgent/scripts/scan.py --validate "<printed-temporary-run>"
 ```
@@ -48,7 +67,7 @@ Registrations are in
 [the agent entrypoint](../.github/agents/Job%20Search.agent.md) and
 [the skill](../.github/skills/job-search/SKILL.md).
 
-`--company` is repeatable. No company argument means all five. `--dry-run`
+`--company` is repeatable. No company argument means all fifteen. `--dry-run`
 makes network calls but writes no run artifacts; `-B` also suppresses Python
 bytecode. Direct non-dry `scan.py` requires an explicit `--output-dir` inside
 system temp and fails before fetching when omitted. `match.py start` manages
@@ -57,12 +76,46 @@ that path automatically and prints the owned root, run and matching session.
 
 Exit codes for start/scan: **0** all requested sources complete (or outputs valid),
 **2** at least one source partial, failed, disabled or blocked, **1** configuration,
-validation or persistence error. All-company start succeeds when all five requested
+validation or persistence error, **130** cancellation. Invalid CLI syntax/choices
+use argparse's usage-error exit code 2. All-company start succeeds when all fifteen requested
 sources complete. Read each receipt.
 
 Apple uses `enabled: true` and `access: public_endpoint`. This is a non-gating
 source label; Apple uses the ordinary collection path without a separate approval
 step. Its search and detail parsing is described in [portal contracts](docs/portal-contracts.md#apple).
+New sources also use non-gating `public_feed` or `public_endpoint` source labels;
+the user manages permissions manually. These labels are not legal approvals.
+
+## Parallel Collection
+
+Collection and deterministic location/public-state/title filtering run in up to
+**15 Python company workers** by default. `--workers N` accepts 1-15 on both
+`match.py start` and `scan.py`; `--workers 1` runs companies sequentially.
+Selecting fewer companies starts only the required number of workers.
+
+Both entrypoints use one dispatcher. Each worker owns its HTTP client and result;
+pagination and description requests inside a company keep their existing order,
+pacing and retry limits. There is no extra shared-host serialization: Rubrik,
+Databricks and Arcesium can run concurrently against Greenhouse. Provider/IP
+limits can still apply, including across employers. Parallelism is not a bypass
+for Microsoft's rate limit, and failed scans are not automatically retried serially.
+
+Progress and elapsed timing go to stderr; machine-readable stdout stays clean.
+Results retain requested-company order even when workers finish out of order.
+Receipts freeze actual company completion times and include `elapsed_seconds`;
+a fast source is not timestamped as if it waited for the slowest source to finish.
+
+The coordinator validates results and publishes one atomic temporary run, then
+rereads the tracker and removes already-applied pairs before matching. Workers
+do not read the resume/tracker, write shared files or make fit judgments. Resume
+assessment and user-confirmed application updates remain centralized; these
+Python threads are not LLM fleet agents and require no extra model calls.
+
+Expected source errors remain per-company partial/failed results while other
+workers continue. On cancellation or an unexpected fatal error, queued work is
+cancelled and started workers are joined before session cleanup. Cancellation
+is cooperative: an in-flight request must finish or reach its existing timeout.
+Completed-source output is not published from a cancelled collection.
 
 ## Testing
 
@@ -168,7 +221,7 @@ as unresolved. No experience-year or compensation inference is used.
 ## Access Conditions
 
 Technical accessibility is not blanket permission for recurring extraction.
-Check applicable terms before repeated use and keep employer content private.
+The user is responsible for applicable permissions and keeping employer content private.
 There is no scheduler or automatic retry loop between runs.
 
 - Rubrik uses the documented Greenhouse GET API, not corporate-page scraping.
@@ -180,10 +233,15 @@ There is no scheduler or automatic retry loop between runs.
   visible warnings for each on-demand run. Disable them in configuration if
   your intended access is not permitted.
 
-GET requests are host-restricted, use a declared User-Agent, have timeouts and
+HTTP requests are host-restricted, use a declared User-Agent, have timeouts and
 bounded retries, and honor bounded Retry-After delays. Authentication failures,
 challenges and foreign-host redirects are not bypassed. There are no application
-POSTs, cookies, credential collection, stealth browsers or proxies.
+POSTs, account-cookie collection, private credentials, stealth browsers or proxies.
+JSON POST is restricted to the two verified read-only Workday search URLs;
+search POST redirects are rejected. Rippling's public-search headers are limited
+to its Algolia origin and cannot follow cross-origin redirects. Intuit uses
+published location/detail routes, not `/search-jobs/` AJAX. Snowflake uses its
+independently accessible official pages, not the denied Ashby feed.
 
 ## Applied Tracker
 
@@ -196,10 +254,16 @@ company,jobid,title
 It starts empty. Tell the agent which jobs you applied to and want recorded.
 The [track-applications skill](../.github/skills/track-applications/SKILL.md)
 resolves their exact IDs/titles and verifies the written rows. No dates, URLs,
-statuses or other columns are stored. Company keys are amazon, rubrik, uber, apple
-and deshaw_india. Existing rows survive later writes. Job IDs remain strings; the
+statuses or other columns are stored. Company keys are amazon, rubrik, uber, apple,
+deshaw_india, stripe, databricks, snowflake, rippling, arcesium, atlassian,
+salesforce, adobe, microsoft and intuit. Existing rows survive later writes. Job IDs remain strings; the
 title is informational. Apple uses the original posting ID, including any location
 suffix, for applications; position_id is only an opportunity-grouping identity.
+Microsoft uses the Eightfold posting ID, Intuit the TalentBrew posting ID,
+Snowflake the full Phenom jobSeqNo, and Rippling the native job UUID. Snowflake's
+shorter jobId is reused across distinct postings and is metadata only. Their alternate
+requisition/ATS/location-expanded IDs must not replace the original `id`.
+See [source identity contracts](docs/portal-contracts.md#posting-identities).
 
 Same company + jobid means already applied, even when its title changes. Repeated
 recording is a no-op, not another row or a silent title update. Different IDs with

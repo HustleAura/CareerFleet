@@ -27,6 +27,56 @@
       "enabled": true,
       "access": "public_endpoint",
       "note": "Public careers search and detail pages with embedded JSON; collected on demand."
+    },
+    "stripe": {
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Official careers index and detail pages. Coverage is the public website, not the differing Greenhouse inventory."
+    },
+    "databricks": {
+      "enabled": true,
+      "access": "public_feed",
+      "note": "Public Greenhouse databricks board with full descriptions; permissions managed manually by the user."
+    },
+    "snowflake": {
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Official sitemap and full Phenom details reconciled to public search totals; unique posting identity is jobSeqNo, not reused jobId. No Ashby requests."
+    },
+    "rippling": {
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Official public Algolia search and native Rippling ATS details; merge location-expanded hits by job UUID."
+    },
+    "arcesium": {
+      "enabled": true,
+      "access": "public_feed",
+      "note": "Public Greenhouse arcesiumllc board; preserve multi-city postings and verify India office ancestry. Permissions managed manually."
+    },
+    "atlassian": {
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Current public careers JSON feed, not independently reconciled underlying ATS coverage; permissions managed manually."
+    },
+    "salesforce": {
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Workday External_Career_Site only; excludes separate brand, research and early-career boards."
+    },
+    "adobe": {
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Public Workday external_experienced board; Phenom inventory can differ. Existing title rules still exclude Computer Scientist titles."
+    },
+    "microsoft": {
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Current Eightfold public search and full details; posting identity is the Eightfold ID, not the displayed ATS requisition."
+    },
+    "intuit": {
+      "enabled": true,
+      "access": "public_endpoint",
+      "note": "Published India location pages and full job JSON-LD; no search AJAX or Avature application requests."
     }
   }
 }
