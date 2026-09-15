@@ -43,13 +43,18 @@ it does not assess JDs. Commands below run from the workspace root.
    candidates. Report role/title exclusions and ambiguities, listed, applied
    exclusions-before-assessment, candidate and assessed counts separately. Never
    assign fake fit decisions to applied exclusions. Do not modify collection files.
+   For Microsoft, preserve the `collection` object and distinguish the declared
+   India/exact-II-or-2 query from all Microsoft roles or SDE-2 aliases. Show its
+   collected eligible/full-JD counts and request-budget/rate-limit stop reason.
+   A complete collected set of JDs does not repair partial query enumeration.
 
 ## Assess In Batches
 
 1. Work through every candidate in `candidates.json`, using batches of 10-20 complete
    JDs (smaller for long descriptions). Read all matching text and source fields, not
    title-only summaries, first pages or top-N samples. The shared software-role
-   filter and Amazon's additional SDE-II rule already gate every company's listings.
+   filter, Amazon's SDE-II rule and Microsoft's exact Software Engineer II/2
+   whitelist already gate the listings.
    Never promote inventory-only or ambiguous titles into candidates, waive the role
    filter for AI work, or add new level/years exclusions during assessment.
    Input is listings for every company, not the larger inventory. Preserve

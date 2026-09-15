@@ -23,6 +23,7 @@ AMBIGUOUS_ROLE = re.compile(
 SDE_TWO = re.compile(r"\b(?:sde|software\s+(?:(?:development|dev)\s+)?engineer)\s*[-,:]?\s*(?:ii|2)\b", re.I)
 OTHER_LEVEL = re.compile(r"\b(?:sde|software\s+(?:(?:development|dev)\s+)?engineer)\s*[-,:]?\s*(?:iii|iv|i|1|3|4)\b", re.I)
 OTHER_AMAZON_FAMILY = re.compile(r"\b(?:principal|staff)\b", re.I)
+MICROSOFT_TITLES = ("software engineer ii", "software engineer 2")
 
 
 def validate_role_policy(policy):
@@ -64,5 +65,11 @@ def amazon_title_filter(title):
 def classify_title(company, title, policy=ROLE_POLICY):
     validate_role_policy(policy)
     role = software_role_filter(title)
+    if company == "microsoft":
+        normalized = " ".join(normalized_title(title).casefold().split())
+        level = role if role != "matched" else (
+            "matched" if normalized in MICROSOFT_TITLES else
+            "unresolved" if SDE_TWO.search(normalized) else "excluded")
+        return {"role_filter": role, "title_filter": level}
     return {"role_filter": role,
             "title_filter": amazon_title_filter(title) if company == "amazon" else role}

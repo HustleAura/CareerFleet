@@ -28,7 +28,7 @@ import salesforce
 import snowflake
 import stripe
 import uber
-from common import CollectionCancelled, HttpClient, ScanResult, SUPPORTED_COMPANIES, TARGET_CITIES, city_keys
+from common import CollectionCancelled, HttpClient, ScanResult, SUPPORTED_COMPANIES, TARGET_CITIES, city_keys, collection_summary
 from roles import classify_title, validate_role_policy
 
 
@@ -66,6 +66,7 @@ def load_config(path):
             raise ValueError(f"{name}: unrecognized access status")
         if entry.get("access") == "approved" and not str(entry.get("approval_reference", "")).strip():
             raise ValueError(f"{name}: approved access requires an approval_reference")
+    microsoft.validate_max_requests(companies["microsoft"].get("max_requests", microsoft.DEFAULT_MAX_REQUESTS))
     return config
 
 
@@ -74,6 +75,8 @@ def collect_company(name, config, http_factory=HttpClient):
         raise ValueError("Unknown collection company")
     entry = config["companies"][name]
     result = ScanResult(name, config["cities"], config["role_filter"])
+    if name == "microsoft":
+        result.collection = microsoft.collection_metadata(entry.get("max_requests", microsoft.DEFAULT_MAX_REQUESTS))
     result.warnings.append(entry.get("note", ""))
     if entry["access"] == "permission_required":
         result.access_status = "blocked"
@@ -83,7 +86,11 @@ def collect_company(name, config, http_factory=HttpClient):
         result.access_status = "disabled"
         return result.finish()
     try:
-        CLIENTS[name].collect(http_factory(CLIENTS[name].HOSTS), result)
+        http = http_factory(CLIENTS[name].HOSTS)
+        if name == "microsoft":
+            microsoft.collect(http, result, max_requests=result.collection["request_limit"])
+        else:
+            CLIENTS[name].collect(http, result)
     except (ValueError, KeyError, TypeError, AttributeError, UnicodeError, OSError) as error:
         result.errors.append(f"{type(error).__name__}: {error}")
     return result.finish()
@@ -155,7 +162,7 @@ def markdown_url(url):
 
 def report(results):
     cities = sorted({city for result in results for city in result.cities})
-    lines = ["# Job Search", "", f"India: {', '.join(cities)}. Software-engineering roles only; Amazon also requires SDE II.", "",
+    lines = ["# Job Search", "", f"India: {', '.join(cities)}. Software-engineering roles only; Amazon requires SDE II; Microsoft uses exact Software Engineer II/2 titles.", "",
              "Counts describe public source postings at fetch time, not a guarantee of active hiring.", "",
              "| Company | Status | Source IDs | City-scoped | Shown | Unresolved locations |",
              "|---|---|---:|---:|---:|---:|"]
@@ -165,6 +172,9 @@ def report(results):
     for result in results:
         receipt = result.receipt()
         lines.extend(["", f"## {result.company}", "", f"Fetched: {result.started_at}", ""])
+        if "collection" in receipt:
+            lines.extend([collection_summary(receipt["collection"]), "",
+                          "Completeness applies only to the declared query, not all company openings.", ""])
         for message in result.warnings + result.errors:
             if message:
                 lines.append("- " + markdown(message))
@@ -185,7 +195,7 @@ def report(results):
                 if job["title_filter"] == "matched" and job["expired"] is False:
                     lines.append(f"- [{markdown(job['title'])}]({markdown_url(job['url'])}) ({markdown(job['id'])})")
         if receipt["title_unresolved_count"]:
-            lines.extend(["", "Ambiguous role or Amazon level labels are retained in inventory.json for audit, not recommendations."])
+            lines.extend(["", "Ambiguous role/level labels are retained in inventory.json for audit, not recommendations."])
     return "\n".join(lines) + "\n"
 
 
@@ -233,6 +243,8 @@ def validate_payload(receipt, inventory, unresolved, selected):
                 raise ValueError("Role/title counts do not match inventory")
     if receipt["status"] == "complete" and (not receipt["inventory_complete"] or not receipt["details_complete"] or receipt["errors"]):
         raise ValueError("Complete status conflicts with coverage or errors")
+    if receipt["company"] == "microsoft":
+        microsoft.validate_collection(receipt, inventory, unresolved, selected)
 
 
 def write_file(path, content):
@@ -283,7 +295,7 @@ def validate_run(directory):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Collect supported company job boards for software-engineering roles; Amazon also requires SDE II.")
+    parser = argparse.ArgumentParser(description="Collect supported job boards; Amazon requires SDE II and Microsoft uses India/exact Software Engineer II/2 filters.")
     targets = parser.add_mutually_exclusive_group()
     targets.add_argument("--company", action="append", choices=CLIENTS, help="Repeat for multiple companies")
     targets.add_argument("--all", action="store_true", help="Check all supported companies, reporting source status")

@@ -71,7 +71,8 @@
     "microsoft": {
       "enabled": true,
       "access": "public_endpoint",
-      "note": "Current Eightfold public search and full details; posting identity is the Eightfold ID, not the displayed ATS requisition."
+      "max_requests": 30,
+      "note": "India geography search with exact Software Engineer II/2 title filters; full JDs fetched incrementally. Completeness is within this query, not all SDE-2 aliases. No retries or redirects; request budget is not a verified API quota. Posting identity is the Eightfold ID, not the displayed ATS requisition."
     },
     "intuit": {
       "enabled": true,

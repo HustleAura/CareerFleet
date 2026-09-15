@@ -42,8 +42,13 @@ worker shutdown before cleaning a cancelled collection.
   Engineer, Backend, Frontend or Full-Stack Engineer title. Exclude SRE/DevOps,
   QA/SDET/test, support, hardware, scientist, analyst and management roles even
   when a software title is present. Ambiguous titles are withheld.
-- Amazon additionally requires its existing SDE-II title variants. Other companies
-  have no new level or years filter. Retain full city-scoped inventory for auditing;
+- Amazon additionally requires its existing SDE-II title variants. Microsoft
+  defaults to India geography plus exact Software Engineer II / Software Engineer 2
+  title filters, with local country/city checks and incremental full JDs. Preserve
+  its declared scope and collected-set detail counts; complete does not mean all
+  SDE-2 aliases. Its configured request budget is not an API quota; no retries,
+  redirects or global fallback. Other companies have no added level or years
+  filter. Retain collected city-scoped inventory for auditing;
   matching assesses every untracked eligible listing, never the larger inventory.
 - Never change access approvals, defeat a block, or ask for
   session cookies or credentials to complete a scan.

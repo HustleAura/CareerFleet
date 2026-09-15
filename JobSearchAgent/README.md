@@ -24,7 +24,7 @@ Rippling's public search credential is read from its official frontend per run.
 | Atlassian | Official careers JSON with full descriptions | Software-engineering titles | Enabled |
 | Salesforce | Workday main external board search and details | Software-engineering titles | Enabled |
 | Adobe | Workday experienced-hire board search and details | Software-engineering titles | Enabled |
-| Microsoft | Current Eightfold search and full details | Software-engineering titles | Enabled |
+| Microsoft | India-filtered Eightfold search and incremental full details | Exact Software Engineer II / Software Engineer 2 titles | Enabled |
 | Intuit | Public India location lists and detail JSON-LD | Software-engineering titles | Enabled |
 
 Default searches cover all fifteen companies. NVIDIA is deferred because its
@@ -100,6 +100,34 @@ Databricks and Arcesium can run concurrently against Greenhouse. Provider/IP
 limits can still apply, including across employers. Parallelism is not a bypass
 for Microsoft's rate limit, and failed scans are not automatically retried serially.
 
+### Microsoft default
+
+Microsoft queries `location=India` with an empty keyword query and repeated
+`filter_hiring_title=software engineer ii` / `filter_hiring_title=software engineer 2`
+parameters. This is a geography query, not a verified strict country facet.
+Every posting still undergoes exact India/city checks; remote/hybrid postings
+with an explicit Hyderabad or Bengaluru association remain eligible.
+
+The two exact titles define the source scope, not all SDE-2 aliases or suffixed
+titles. Other levels, generic Software Engineer titles and mixed-level postings
+are withheld. No years-of-experience or internal-grade inference is used.
+
+Full JDs are fetched after each page for eligible city-scoped postings, before
+requesting the next page. There is no separate job-count cap or global fallback.
+`companies.microsoft.max_requests` in [search_config.json](search_config.json)
+sets a positive actual-HTTP-attempt budget (default **30**, not an API quota).
+Each request has one attempt, redirects are rejected, and a two-second pause
+follows each completed request. HTTP 429 stops immediately without a retry.
+The existing retry/redirect behavior of other companies is unchanged.
+
+Terminal pagination, totals and first-page ordering must reconcile before the
+query is complete. Completed JDs survive a later budget/rate-limit failure.
+Receipts and matching output include `collection` scope, effective page filters,
+distance ordering, request counters, stop reason, and full-JD counts for the
+collected eligible set. `collected_details_complete` does not imply that the
+whole query was enumerated. Existing inventory/detail completeness flags describe
+the declared query only; incomplete sources remain provisional.
+
 Progress and elapsed timing go to stderr; machine-readable stdout stays clean.
 Results retain requested-company order even when workers finish out of order.
 Receipts freeze actual company completion times and include `elapsed_seconds`;
@@ -122,7 +150,7 @@ Completed-source output is not published from a cancelled collection.
 Ask **"test job search agent"** or **"test job search for Rubrik"** to invoke
 the [test-agents skill](../.github/skills/test-agents/SKILL.md). Its job-search
 path runs production collectors into a unique system temporary directory,
-checks city spellings, shared role eligibility and Amazon level rules, validates temporary results, reports
+checks city spellings, shared role eligibility and Amazon/Microsoft level rules, validates temporary results, reports
 source coverage and failures, and removes test artifacts afterward. It does not
 start a system-design interview or change the real applied tracker.
 
@@ -165,10 +193,11 @@ the root. No resume, interview or MCP files are modified. Global feeds and
 internal job payloads are not saved.
 
 - `inventory.json`: all public, city-scoped records retrieved, including
-  excluded/ambiguous roles, excluded Amazon levels and any expired records. Source field conflicts are
+  excluded/ambiguous roles, excluded company levels and any expired records. Source field conflicts are
   retained as warnings.
 - `listings.json`: the displayable subset. All companies apply the shared software-role
-  filter; Amazon also applies its existing SDE-II restriction.
+  filter; Amazon also applies its existing SDE-II restriction and Microsoft its
+  exact Software Engineer II/2 whitelist within the declared India query.
   Expired or unknown-expiry postings are withheld; exploratory postings remain
   included and labelled. Missing descriptions remain visible with a partial status.
 - `unresolved.json`: public postings with insufficient/conflicting location
@@ -185,7 +214,7 @@ descriptions cannot silently become a successful empty result. A complete
 receipt is a point-in-time source inventory, not a guarantee that every employer
 is still hiring or that jobs remained unchanged throughout a paginated scan.
 
-## Role And Amazon Level Filters
+## Role And Company Level Filters
 
 [search_config.json](search_config.json) requires
 `"role_filter": "software_engineering_v1"`. Missing/unsupported policies fail
@@ -207,9 +236,10 @@ Platform qualifies, but Software Engineer - SRE does not.
 The filter gates listings-only requests as well as matching. Full city-scoped
 inventory remains in temporary storage for auditing. Receipts distinguish role
 exclusions/ambiguities from overall title exclusions/ambiguities; the overall
-counts also include Amazon level decisions, so these counts are not additive.
+counts also include Amazon and Microsoft title/level decisions, so these counts are not additive.
 Validation recomputes classifications from titles and the recorded policy.
-No new seniority or experience-year limits apply outside Amazon.
+Microsoft uses its verified exact-title whitelist described above. Other
+companies retain their existing role policy; no experience-year prefilter applies.
 
 The Amazon client fetches the complete two-city inventory before locally selecting
 SDE II / SDE 2, Software Development Engineer II, Software Dev Engineer II,

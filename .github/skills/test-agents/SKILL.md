@@ -122,7 +122,7 @@ no network calls; never label those as actual source coverage or semantic matchi
 	workspace root; all test run outputs must stay under this temporary root.
 	Do not write to `JobSearchAgent/runs/`, edit configuration, update resume
 	facts, or touch system-design recordings or progress.
-3. Check the local city, shared role and Amazon level rules in memory, without fixtures or
+3. Check the local city, shared role and Amazon/Microsoft level rules in memory, without fixtures or
 	persistent test files:
 
 	```bash
@@ -138,6 +138,7 @@ no network calls; never label those as actual source coverage or semantic matchi
 	from apple import HOSTS, location_cities
 	from match import opportunity
 	from roles import ROLE_POLICY, classify_title, software_role_filter, validate_role_policy
+	from microsoft import collection_metadata, search_url, validate_max_requests
 	from scan import CLIENTS, collect_company, load_config, validate_payload
 	config = load_config('JobSearchAgent/search_config.json')
 	assert set(CLIENTS) == set(SUPPORTED_COMPANIES) == set(config['companies'])
@@ -216,8 +217,28 @@ no network calls; never label those as actual source coverage or semantic matchi
 				  'Software Engineer, Support Tools', 'Software Engineer - Integration Support Tools'):
 		assert software_role_filter(title) == 'matched', title
 		for company in CLIENTS:
-			if company != 'amazon':
+			if company not in ('amazon', 'microsoft'):
 				assert classify_title(company, title)['title_filter'] == 'matched', title
+	for title in ('Software Engineer II', 'Software Engineer 2', ' SOFTWARE  ENGINEER II '):
+		assert classify_title('microsoft', title)['title_filter'] == 'matched', title
+	for title in ('Software Engineer', 'Senior Software Engineer', 'Software Engineer III'):
+		assert classify_title('microsoft', title)['title_filter'] == 'excluded', title
+	for title in ('Software Engineer II/III', 'Software Engineer II & Senior Software Engineer',
+				  'Sr. Software Engineer /Software Engineer II', 'Software Engineer II - Backend', 'SDE II'):
+		assert classify_title('microsoft', title)['title_filter'] == 'unresolved', title
+	assert classify_title('microsoft', 'Software Engineer II in Test')['title_filter'] == 'excluded'
+	for invalid in (None, 0, -1, True, '30', 1.5):
+		rejects(validate_max_requests, invalid)
+	assert collection_metadata()['request_limit'] == 30
+	assert 'location=India' in search_url(0)
+	assert search_url(0).count('filter_hiring_title=') == 2
+	assert HttpClient({'example.invalid'}).attempts == 3
+	bounded = HttpClient({'example.invalid'})
+	bounded.restrict_requests(1)
+	assert bounded.attempts == 1
+	bounded.request_count = 1
+	rejects(bounded.json, 'https://example.invalid/test')
+	assert bounded.request_count == 1
 	for title in ('SRE', 'DevOps Engineer', 'SDE-T', 'Software Engineer - SRE',
 				  'Backend Engineer, DevOps', 'Software Development Engineer in Test',
 				  'Software Engineer, QA', 'Software Engineer - Quality Assurance',
@@ -244,10 +265,14 @@ no network calls; never label those as actual source coverage or semantic matchi
 			result.add(job)
 		result.listing_complete = True
 		assert result.selected()[0]['id'] == '0'
-		assert len(result.selected()) == (1 if company == 'amazon' else 2)
+		assert len(result.selected()) == (1 if company in ('amazon', 'microsoft') else 2)
 		assert len(result.inventory()) == 4
 		assert result.receipt()['role_excluded_count'] == 1
 		assert result.receipt()['role_unresolved_count'] == 1
+		if company == 'microsoft':
+			# Synthetic role checks are not a verified filtered API collection.
+			rejects(validate_payload, result.receipt(), result.inventory(), [], result.selected())
+			continue
 		validate_payload(result.receipt(), result.inventory(), [], result.selected())
 		tampered = deepcopy(result.inventory())
 		tampered[1]['role_filter'] = tampered[1]['title_filter'] = 'matched'
@@ -282,7 +307,7 @@ no network calls; never label those as actual source coverage or semantic matchi
 		assert {job['id'] for job in states.unresolved()} == {'broad-location'}
 		assert states.receipt()['status'] == 'partial'
 		validate_payload(states.receipt(), states.inventory(), states.unresolved(), states.selected())
-	print('TEST: fifteen companies, Apple dispatch/parser/grouping, city aliases, role/level filters and payload validation passed')
+	print('TEST: fifteen-company role/level checks, Apple dispatch/parser/grouping, city aliases and non-Microsoft payload validation passed; Microsoft live scoped validation is separate')
 	PY
 	```
 
@@ -339,13 +364,15 @@ no network calls; never label those as actual source coverage or semantic matchi
 	reconciliation, all full details and distinct jobSeqNo values despite repeated
 	jobId metadata, including Unicode sitemap URLs; Workday later nonempty pages
 	reporting total=0, full multi-location
-	details, and Salesforce main-board-only scope; Microsoft complete exact-city
-	discovery and dual IDs; Intuit real pagination links and JSON-LD city aliases.
+	details, and Salesforce main-board-only scope; Microsoft India/exact-II-or-2
+	query scope, echoed filters, incremental full JDs, request accounting and dual
+	IDs; Intuit real pagination links and JSON-LD city aliases.
 	Verify scoped search headers/POSTs and redirect rejection before network access
 	with small in-memory checks. No arbitrary POST, credential forwarding, browser
 	fallback, denied Ashby retry or Intuit search AJAX is permitted.
 	Every company's listings must pass the shared
-	role filter; Amazon also requires SDE II. Inspect actual accepted, excluded and
+	role filter; Amazon also requires SDE II and Microsoft uses its exact-title
+	whitelist. Inspect actual accepted, excluded and
 	ambiguous titles for semantic mistakes, not only agreement with the classifier.
 	Role/level exclusions remain in inventory and counts must reconcile. Unrequested
 	companies must have no outputs or network requests. If a source did not run,

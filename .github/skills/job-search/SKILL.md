@@ -47,7 +47,12 @@ The complete source contracts are in `JobSearchAgent/docs/portal-contracts.md`.
    retry access blocks, change hosts, use proxies, or fall back to a browser.
    A transient/schema failure may need a client repair; preserve the partial
   result for this session and report its limitation.
-  The dispatcher isolates expected source failures; do not automatically retry
+  Microsoft uses India geography plus exact Software Engineer II/2 title filters,
+  fetching full JDs incrementally. Its configured actual-request budget (default 30)
+  is not an API quota; requests have no retries, redirects or global fallback.
+  Retain its `collection` scope, request counters, stop reason and collected-set
+  full-JD counts even if the query stops early. The dispatcher isolates expected
+  source failures; do not automatically retry
   the run sequentially. Cancellation returns 130 after started workers settle
   and the coordinator handles cleanup. No output from unfinished workers is
   treated as a complete run.
@@ -63,7 +68,7 @@ The complete source contracts are in `JobSearchAgent/docs/portal-contracts.md`.
   session so it does not fetch twice. For an explicit listings-only request, show
   all untracked candidates with direct employer links in chat without scoring.
   Report source status, role exclusions/ambiguities, total title exclusions/
-  ambiguities (including Amazon level), listed count, applied exclusions, remaining
+  ambiguities (including Amazon/Microsoft level rules), listed count, applied exclusions, remaining
   candidates and unresolved locations separately. Never present a durable report-file link.
 6. Keep temporary files only while needed for this session's application follow-up.
   User-confirmed applications route to track-applications; that skill records and
@@ -93,14 +98,20 @@ The complete source contracts are in `JobSearchAgent/docs/portal-contracts.md`.
   duties or an old Software Engineer title in the posting URL.
 - Amazon additionally requires its existing SDE II/SDE 2 or full
   software-engineer-II variants. Do not infer level from years, pay, or "II" in
-  the description. Other companies have no added seniority or years filter.
+  the description. Microsoft additionally accepts only the verified exact titles
+  Software Engineer II / Software Engineer 2. Other variants or mixed levels are
+  withheld, not inferred from experience or grade. Other companies have no added
+  seniority or years filter.
 - Exploratory postings remain included and labelled. They are not proof of a
   specific vacancy. Broader India/remote locations stay in `unresolved.json`,
   separate from exact-city matches.
 - An unknown expiry is not confirmed active. Expired postings and ambiguous
-  roles/Amazon title levels are retained in inventory but not shown as eligible.
+  roles/company title levels are retained in inventory but not shown as eligible.
 - `complete` describes source coverage at the fetch time. It does not prove
   actual hiring activity, access permission, or candidate eligibility.
+  Microsoft completeness is within its declared India/two-title query, not all
+  SDE-2 aliases. Its `collected_details_complete` only describes collected eligible
+  postings and does not override an incomplete inventory or provisional shortlist.
   Preserve the source scope: Stripe's public site differs from its Greenhouse
   feed; Atlassian has no independent ATS total; Salesforce is main-board-only;
   Adobe's Workday and Phenom inventories can differ. A successfully parsed

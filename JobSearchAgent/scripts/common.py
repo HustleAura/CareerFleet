@@ -34,6 +34,10 @@ class FetchError(ValueError):
     pass
 
 
+class RequestLimitError(FetchError):
+    pass
+
+
 class CollectionCancelled(Exception):
     pass
 
@@ -57,7 +61,7 @@ class RestrictedRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, new_url):
         public_url(new_url, self.hosts)
         if self.reject_redirects:
-            raise FetchError("Search POST redirects are not supported")
+            raise FetchError("Redirects are not supported for this request")
         if self.same_origin and urllib.parse.urlsplit(request.full_url).hostname != urllib.parse.urlsplit(new_url).hostname:
             raise FetchError("Search headers must not cross origins")
         return super().redirect_request(request, response, code, message, headers, new_url)
@@ -70,7 +74,18 @@ class HttpClient:
         self.attempts = attempts
         self.max_bytes = max_bytes
         self.cancel_event = cancel_event
+        self.request_count = 0
+        self.request_limit = None
         self.opener = urllib.request.build_opener(RestrictedRedirect(self.hosts))
+
+    def restrict_requests(self, limit):
+        if type(limit) is not int or limit < 1:
+            raise ValueError("Request limit must be a positive integer")
+        if self.request_count:
+            raise ValueError("Request restrictions must be configured before fetching")
+        self.request_limit = limit
+        self.attempts = 1
+        self.opener = urllib.request.build_opener(RestrictedRedirect(self.hosts, reject_redirects=True))
 
     def _check_cancelled(self):
         if self.cancel_event is not None and self.cancel_event.is_set():
@@ -108,8 +123,11 @@ class HttpClient:
             RestrictedRedirect(self.hosts, same_origin=True, reject_redirects=body is not None))
         for attempt in range(self.attempts):
             self._check_cancelled()
+            if self.request_limit is not None and self.request_count >= self.request_limit:
+                raise RequestLimitError("Request budget exhausted; collection is incomplete")
             request = urllib.request.Request(url, data=body, headers=request_headers)
             try:
+                self.request_count += 1
                 with opener.open(request, timeout=self.timeout) as response:
                     response_body = response.read(self.max_bytes + 1)
                     if len(response_body) > self.max_bytes:
@@ -299,6 +317,7 @@ class ScanResult:
         self.pages = []
         self.listing_complete = False
         self.access_status = "enabled"
+        self.collection = None
 
     def finish(self):
         if self.finished_at is None:
@@ -347,7 +366,7 @@ class ScanResult:
             status = "complete"
         else:
             status = "partial" if self.records else "failed"
-        return {"company": self.company, "status": status, "started_at": self.started_at,
+        receipt = {"company": self.company, "status": status, "started_at": self.started_at,
                 "role_filter_policy": self.role_policy,
                 "finished_at": self.finished_at or utc_now(), "elapsed_seconds": self.elapsed_seconds,
                 "requested_cities": list(self.cities), "country": "India",
@@ -364,3 +383,22 @@ class ScanResult:
                 "role_excluded_count": sum(job["role_filter"] == "excluded" for job in inventory),
                 "role_unresolved_count": sum(job["role_filter"] == "unresolved" for job in inventory),
                 "pages": self.pages, "errors": self.errors, "warnings": self.warnings}
+        if self.collection is not None:
+            selected = self.selected()
+            detailed = sum(bool(job["description"]) for job in selected)
+            receipt["collection"] = dict(
+                self.collection, eligible_count=len(selected), detailed_count=detailed,
+                collected_details_complete=(bool(selected) or self.listing_complete) and detailed == len(selected),
+            )
+        return receipt
+
+
+def collection_summary(collection):
+    return (
+        f"Coverage: {collection['scope']}. "
+        f"Full JDs for collected eligible postings: {collection['detailed_count']}/{collection['eligible_count']}; "
+        f"collected-set details complete: {collection['collected_details_complete']}. "
+        f"HTTP attempts: {collection['request_attempts']}/{collection['request_limit']} "
+        f"(search {collection['search_attempts']}, detail {collection['detail_attempts']}); "
+        f"stop reason: {collection['stop_reason']}."
+    )

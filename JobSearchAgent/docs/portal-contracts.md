@@ -3,8 +3,9 @@
 Research snapshots: 2026-09-09 and 2026-09-13. Counts change and are not fixed test expectations.
 Source access conditions remain separate from technical verification. The
 clients support fifteen employers, not arbitrary ATS tenants. Collect full
-public city-scoped inventories, then apply software_engineering_v1 eligibility
-locally for listings and matching. Amazon also retains its SDE-II restriction.
+public city-scoped inventories within each declared source scope, then apply
+software_engineering_v1 eligibility locally for listings and matching. Amazon
+retains its SDE-II restriction; Microsoft uses its India/exact-II-or-2 query.
 
 ## Rubrik
 
@@ -261,15 +262,35 @@ GET `/api/pcsx/search` returns `data.count`, `data.positions`, applied filters a
 offset-based pages. Full JD text is returned by
 `/api/pcsx/position_details?position_id={id}&domain=microsoft.com&hl=en`.
 
-Use a complete source inventory and inspect all standardized country/city
-locations. The UI's default proximity search includes remote jobs and a broad
-radius; a narrow-radius query is not by itself proof of full city coverage.
-The client enumerates the unfiltered global inventory with empty applied filters,
-reconciles every offset and rechecks the first page. Requests are sequential and
-paced; the source's observed ten-row pages can make this scan substantial.
-Rate-limit failures retain diagnostics and incomplete coverage, not an assumed
-successful city subset. Explicit city associations are not excluded solely
-because a role is remote/hybrid.
+The default query is `domain=microsoft.com`, `query=`, `location=India`, `start=0`,
+with repeated `filter_hiring_title` parameters carrying `software engineer ii`
+and `software engineer 2`. The public frontend uses one parameter per selected
+value, not a comma-joined API value. Verify the echoed `hiringTitle` values,
+`includeRemote=["1"]`, `includeRelocation=["0"]`, and `sortBy="distance"` on every
+page; unexpected effective filters or ordering make coverage incomplete.
+
+No dedicated country facet was established: `location=India` is a geography
+search. Inspect all standardized country/city locations locally and retain
+remote/hybrid jobs with explicit target-city associations. Broader India-only
+locations remain unresolved. The source scope is these two exact titles, not
+every possible SDE-2 alias or all Microsoft openings. Generic, other-level,
+mixed-level and unverified suffixed titles cannot become recommendations.
+
+Fetch full JDs for eligible city-scoped records after each page. Reconcile
+offsets, unique counts, an empty terminal page and first-page ordering. Never
+enumerate the global inventory first or fall back to it on error. The positive
+`max_requests` setting defaults to 30 actual HTTP attempts including validation
+requests, with no separate posting cap. Requests are sequential, paced two
+seconds after completion, single-attempt, and reject redirects; stop immediately
+on 429. This budget is not a documented Microsoft API quota.
+
+The receipt's `collection` object records declared scope, request budget and
+search/detail attempt counts, reported total, ordering, stop reason, and
+`eligible_count`, `detailed_count`, `collected_details_complete`. The last field
+only describes collected eligible records, independently of query enumeration.
+Keep populated JDs on partial failures; do not mark the whole query complete.
+Existing completeness flags remain tied to the declared source query and full
+city-scoped details, and partial matching output remains provisional.
 
 Keep Eightfold `id` as posting identity and retain `atsJobId`/`displayJobId`
 separately. Worksite details can describe hybrid attendance even when an enum says

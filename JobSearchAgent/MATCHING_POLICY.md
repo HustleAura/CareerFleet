@@ -18,9 +18,12 @@ applies before listings and assessment. It permits explicit SDE/SWE, Software
 (Development/Dev) Engineer, Backend, Frontend and Full-Stack Engineer titles.
 SRE/DevOps, QA/SDET/test, support, hardware, scientist, analyst and management
 roles are excluded, even in mixed titles. Ambiguous roles are withheld; a JD
-or AI keyword cannot override title eligibility. Amazon additionally retains its
-existing SDE-II restriction. No new level or years prefilter applies to other
-companies. Preserve Bangalore/Bengaluru display spelling.
+or AI keyword cannot override title eligibility. Amazon retains its existing
+SDE-II restriction. Microsoft defaults to an India geography query with the
+verified exact titles Software Engineer II / Software Engineer 2, then local
+country/city validation. This is not exhaustive across all SDE-2 aliases.
+Other companies retain their existing policy; no years prefilter applies.
+Preserve Bangalore/Bengaluru display spelling.
 
 Recommend up to three concrete opportunities per company; never pad slots.
 Rankable decisions are strong_fit, plausible_fit and stretch. Other decisions
@@ -57,9 +60,11 @@ evidence. Each requires an explanation and requirement references. AI relevance
 measures substantive AI work in the role, not candidate AI expertise.
 
 Relevance index = (35 * required_fit + 25 * ownership_domain_fit +
-20 * coding_stack_fit + 10 * experience_scope_fit + 10 * ai_relevance) / 4.
+25 * experience_scope_fit + 10 * coding_stack_fit + 5 * ai_relevance) / 4.
 This transparent 0-100 prioritization heuristic is not hiring odds, an ATS score
 or a calibrated prediction. No compensation or cross-company level inference.
+Experience is a weighted factor, not an experience-band sorting rule or a new
+years-of-experience cutoff.
 
 Sort by descending computed index, then strong_fit/plausible_fit/stretch for ties,
 then stable job key. Select up to three per company. Group only exact verified
@@ -77,7 +82,7 @@ Add rows only when the user explicitly confirms applying. Titles do not identify
 duplicates; reposts with different IDs are not automatically recognized. No new
 application is inferred from a recommendation or a tailored resume. Full collection
 counts remain intact; report role exclusions/ambiguities, all title exclusions/
-ambiguities (including Amazon level), listed, applied exclusions, candidates and
+ambiguities (including Amazon/Microsoft level rules), listed, applied exclusions, candidates and
 assessed counts separately. Do not invent fit decisions for already-applied exclusions.
 Recheck current applied pairs before selecting/displaying recommendations. A
 newly exposed backfill must receive the same semantic audit as other selections.
@@ -88,6 +93,11 @@ not_scanned. Blocked/disabled/failed sources with no rows have no recommendation
 they are not evidence of zero openings. Partial coverage yields a PROVISIONAL
 shortlist, best only among assessed collected jobs. Report inventory completeness,
 detail completeness, access status, source errors/warnings and fetch age separately.
+Preserve Microsoft's `collection` scope, request counters and stop reason.
+Its collected-set full-JD count/completeness is separate from inventory completeness:
+all collected JDs can be present while budget exhaustion leaves the query partial.
+Complete Microsoft coverage means the declared India/two-title query, not all
+Microsoft openings. Missing JDs remain needs_review; do not refetch during matching.
 
 Keep source listings, dispositions and evidence only in this request's private
 system-temp root. Show recommendations with direct employer links in chat, not

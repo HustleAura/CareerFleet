@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from applications import TRACKER, applied_pairs, read_tracker, tracker_lock, tracker_path
-from common import CollectionCancelled
+from common import CollectionCancelled, collection_summary
 from scan import (
     CLIENTS, DEFAULT_WORKERS, collect_companies, load_config, markdown, markdown_url,
     validate_run, validate_workers, write_file, write_run,
@@ -24,8 +24,8 @@ RESUME = WORKSPACE / "ResumeAgent" / "resume_base.md"
 POLICY = MODULE_ROOT / "MATCHING_POLICY.md"
 SCHEMA = MODULE_ROOT / "templates" / "matches.schema.json"
 VERSION = "2"
-WEIGHTS = {"required_fit": 35, "ownership_domain_fit": 25, "coding_stack_fit": 20,
-           "experience_scope_fit": 10, "ai_relevance": 10}
+WEIGHTS = {"required_fit": 35, "ownership_domain_fit": 25, "experience_scope_fit": 25,
+           "coding_stack_fit": 10, "ai_relevance": 5}
 RANKABLE = ("strong_fit", "plausible_fit", "stretch")
 DECISIONS = RANKABLE + ("not_recommended", "needs_review", "exploratory", "expired")
 JD_FIELDS = ("description", "required", "preferred", "qualifications", "responsibilities")
@@ -558,6 +558,8 @@ def selection_output(manifest, candidates, records, now, applied=()):
             "selected_count": len(recommendations), "provisional": bool(provisional), "recommendations": recommendations,
             "needs_review": [row["key"] for row in rows if by_key[row["key"]]["decision"] == "needs_review" and (name, row["id"]) not in applied],
             "exploratory": [row["key"] for row in rows if by_key[row["key"]]["decision"] == "exploratory" and (name, row["id"]) not in applied]}
+        if "collection" in source:
+            companies[name]["collection"] = source["collection"]
     return {"schema_version": VERSION, "policy_version": VERSION, "source_run": manifest["run"],
             "finalized_at": now.isoformat(), "companies": companies}
 
@@ -578,6 +580,9 @@ def render_shortlist(output, candidates):
             f"Role exclusions: {company['role_excluded_count']}; ambiguous roles: {company['role_unresolved_count']}; "
             f"all title exclusions: {company['title_excluded_count']}; ambiguous titles: {company['title_unresolved_count']}.",
             f"Assessed: {company['assessed_count']}/{company['input_count']} collected listings; selected: {company['selected_count']}.", ""])
+        if "collection" in company:
+            lines.extend([collection_summary(company["collection"]),
+                          "Complete means within this query, not all company openings or title aliases.", ""])
         for warning in company["source_errors"] + company["source_warnings"]:
             lines.append("- " + markdown(warning))
         if company["previously_applied"]:
