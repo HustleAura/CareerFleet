@@ -24,7 +24,7 @@ RESUME = WORKSPACE / "ResumeAgent" / "resume_base.md"
 POLICY = MODULE_ROOT / "MATCHING_POLICY.md"
 SCHEMA = MODULE_ROOT / "templates" / "matches.schema.json"
 VERSION = "2"
-WEIGHTS = {"required_fit": 35, "ownership_domain_fit": 25, "experience_scope_fit": 25,
+WEIGHTS = {"required_fit": 35, "ownership_domain_fit": 15, "experience_scope_fit": 35,
            "coding_stack_fit": 10, "ai_relevance": 5}
 RANKABLE = ("strong_fit", "plausible_fit", "stretch")
 DECISIONS = RANKABLE + ("not_recommended", "needs_review", "exploratory", "expired")

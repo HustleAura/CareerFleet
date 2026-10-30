@@ -59,8 +59,8 @@ Five integer grades range from 0 to 4: 0 no support/mismatch, 1 limited/major ga
 evidence. Each requires an explanation and requirement references. AI relevance
 measures substantive AI work in the role, not candidate AI expertise.
 
-Relevance index = (35 * required_fit + 25 * ownership_domain_fit +
-25 * experience_scope_fit + 10 * coding_stack_fit + 5 * ai_relevance) / 4.
+Relevance index = (35 * required_fit + 15 * ownership_domain_fit +
+35 * experience_scope_fit + 10 * coding_stack_fit + 5 * ai_relevance) / 4.
 This transparent 0-100 prioritization heuristic is not hiring odds, an ATS score
 or a calibrated prediction. No compensation or cross-company level inference.
 Experience is a weighted factor, not an experience-band sorting rule or a new
